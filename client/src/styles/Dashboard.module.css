@@ -1,0 +1,43 @@
+.page {
+  font-family: Arial, sans-serif;
+  padding: 20px;
+}
+
+.card {
+  border: 1px solid #ddd;
+  padding: 12px;
+  border-radius: 8px;
+  margin-bottom: 12px;
+}
+
+.row {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  border: 1px solid #ccc;
+}
+
+.badgeRunning {
+  background: #ffe5e5;
+  border-color: #f3b3b3;
+}
+
+.badgeIdle {
+  background: #e9ffe9;
+  border-color: #b7f0b7;
+}
+
+.pre {
+  background: #f6f6f6;
+  padding: 10px;
+  border-radius: 8px;
+  overflow-x: auto;
+}
