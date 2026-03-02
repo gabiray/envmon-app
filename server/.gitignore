@@ -44,4 +44,4 @@ build/
 dist/
 
 # Local data file
-data/devices.json
+data/

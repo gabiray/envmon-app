@@ -1,17 +1,17 @@
 import requests
-
-from .device_store import load_store
-
+from .device_store import load_store, get_base_url_for
 
 class DeviceNotSelected(Exception):
     pass
 
-
 def get_active_base_url() -> str:
     store = load_store()
-    base = store.get("active_base_url")
-    if not base:
+    du = store.get("active_device_uuid")
+    if not du:
         raise DeviceNotSelected("No active device selected. Select a device first.")
+    base = get_base_url_for(du)
+    if not base:
+        raise DeviceNotSelected("Active device not found in store. Run scan again.")
     return str(base).rstrip("/")
 
 

@@ -14,7 +14,7 @@ def active_device():
 @device_bp.get("/device/health")
 def device_health():
     try:
-        r = get("/health", timeout=4)
+        r = get("/health", timeout=12)
         return jsonify(r.json()), r.status_code
     except DeviceNotSelected as e:
         return jsonify({"ok": False, "error": str(e)}), 400

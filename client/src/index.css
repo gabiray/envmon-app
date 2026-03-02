@@ -1,0 +1,60 @@
+@import "tailwindcss";
+
+@plugin "daisyui" {
+  themes: all;
+}
+
+@plugin "daisyui/theme" {
+  name: "envmon";
+  default: true;
+  prefersdark: false;
+  color-scheme: "light";
+
+  --color-base-100: #ffffff;   /* cards + topbar */
+  --color-base-200: #f8f8f8;   /* page background (deschis) */
+  --color-base-300: #e6edf7;   /* borders */
+  --color-base-content: #111827; /* text */
+
+  --color-primary: #2563eb;
+  --color-primary-content: #ffffff;
+
+  --color-secondary: #ec4899;
+  --color-secondary-content: #ffffff;
+
+  --color-accent: #ffcf28;
+  --color-accent-content: #111827;
+
+  --color-neutral: #0f1420;                 /* sidebar bg */
+  --color-neutral-content: rgba(255,255,255,.92);
+
+  --color-info: #38bdf8;
+  --color-info-content: #061018;
+
+  --color-success: #22c55e;
+  --color-success-content: #04130a;
+
+  --color-warning: #f59e0b;
+  --color-warning-content: #1a1203;
+
+  --color-error: #ef4444;
+  --color-error-content: #1a0b0b;
+
+  --radius-selector: 1rem;
+  --radius-field: 0.5rem;
+  --radius-box: 0.5rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 1;
+  --noise: 0;
+
+  --env-sidebar-border: rgba(255,255,255,.06);
+  --env-sidebar-muted: rgba(255,255,255,.65);
+  --env-nav-hover: rgba(255,255,255,.06);
+  --env-nav-active: rgba(255,255,255,.10);
+  --env-nav-active-border: rgba(255,255,255,.12);
+}
+
+html {
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial;
+}

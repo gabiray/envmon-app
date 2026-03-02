@@ -1,43 +1,378 @@
-.page {
-  font-family: Arial, sans-serif;
-  padding: 20px;
+/* Layout */
+.grid {
+  display: grid;
+  grid-template-columns: 420px 1fr;
+  gap: 16px;
+  align-items: start;
 }
 
+@media (max-width: 1100px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.left,
+.right {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.muted {
+  color: color-mix(in oklab, var(--color-base-content) 55%, transparent);
+  font-size: 12px;
+  margin: 10px 0;
+}
+
+/* Card */
 .card {
-  border: 1px solid #ddd;
-  padding: 12px;
-  border-radius: 8px;
+  background: var(--color-base-100);
+  border: 1px solid color-mix(in oklab, var(--color-base-content) 12%, transparent);
+  border-radius: var(--radius-box);
+  box-shadow: 0 8px 18px color-mix(in oklab, var(--color-base-content) 10%, transparent);
+  overflow: hidden;
+}
+
+.cardHeader {
+  padding: 14px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid color-mix(in oklab, var(--color-base-content) 10%, transparent);
+}
+
+.cardTitle {
+  font-weight: 900;
+  color: var(--color-base-content);
+  font-size: 13px;
+  letter-spacing: 0.2px;
+}
+
+.cardBody {
+  padding: 14px 16px 16px;
+}
+
+.cardRight {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Badges */
+.badgeOk {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--color-success-content);
+  background: color-mix(in oklab, var(--color-success) 22%, transparent);
+  border: 1px solid color-mix(in oklab, var(--color-success) 45%, transparent);
+  padding: 6px 10px;
+  border-radius: 999px;
+}
+
+.badgeLive {
+  font-size: 12px;
+  font-weight: 900;
+  color: var(--color-secondary-content);
+  background: color-mix(in oklab, var(--color-secondary) 22%, transparent);
+  border: 1px solid color-mix(in oklab, var(--color-secondary) 45%, transparent);
+  padding: 6px 10px;
+  border-radius: 999px;
+}
+
+/* Key/Value */
+.kv {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  gap: 8px 10px;
   margin-bottom: 12px;
 }
 
-.row {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-  margin-top: 10px;
-}
-
-.badge {
-  display: inline-block;
-  padding: 3px 10px;
-  border-radius: 999px;
+.k {
   font-size: 12px;
-  border: 1px solid #ccc;
+  color: color-mix(in oklab, var(--color-base-content) 55%, transparent);
+  font-weight: 800;
 }
 
-.badgeRunning {
-  background: #ffe5e5;
-  border-color: #f3b3b3;
+.v {
+  font-size: 13px;
+  color: var(--color-base-content);
+  font-weight: 700;
 }
 
-.badgeIdle {
-  background: #e9ffe9;
-  border-color: #b7f0b7;
+.vMono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  color: var(--color-base-content);
+  font-weight: 800;
+  word-break: break-all;
 }
 
-.pre {
-  background: #f6f6f6;
-  padding: 10px;
-  border-radius: 8px;
-  overflow-x: auto;
+/* Stats */
+.statsRow {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.stat {
+  border: 1px solid color-mix(in oklab, var(--color-base-content) 10%, transparent);
+  background: var(--color-base-200);
+  border-radius: var(--radius-box);
+  padding: 10px 12px;
+}
+
+.statLabel {
+  font-size: 12px;
+  color: color-mix(in oklab, var(--color-base-content) 55%, transparent);
+  font-weight: 800;
+}
+
+.statValue {
+  margin-top: 6px;
+  font-size: 14px;
+  color: var(--color-base-content);
+  font-weight: 900;
+}
+
+/* Health chips */
+.healthRow {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.healthItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 999px;
+  background: var(--color-base-200);
+  border: 1px solid color-mix(in oklab, var(--color-base-content) 10%, transparent);
+  font-weight: 800;
+  font-size: 12px;
+  color: var(--color-base-content);
+}
+
+.dotOk,
+.dotWarn {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+}
+
+.dotOk { background: var(--color-success); }
+.dotWarn { background: var(--color-warning); }
+
+/* Actions */
+.actionsRow {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* Forms */
+.formGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+
+@media (max-width: 600px) {
+  .formGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 800;
+  color: color-mix(in oklab, var(--color-base-content) 55%, transparent);
+}
+
+.input {
+  padding: 10px 10px;
+  border-radius: var(--radius-field);
+  border: 1px solid color-mix(in oklab, var(--color-base-content) 12%, transparent);
+  background: var(--color-base-200);
+  outline: none;
+  font-weight: 800;
+  color: var(--color-base-content);
+}
+
+.input:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 4px color-mix(in oklab, var(--color-primary) 22%, transparent);
+}
+
+/* Map hint block */
+.mapHint {
+  margin-top: 12px;
+  border-radius: var(--radius-box);
+  border: 1px dashed color-mix(in oklab, var(--color-base-content) 18%, transparent);
+  padding: 12px;
+  background: var(--color-base-200);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.mapHintTitle {
+  font-weight: 900;
+  color: var(--color-base-content);
+  font-size: 12px;
+}
+
+.mapHintText {
+  font-size: 12px;
+  color: color-mix(in oklab, var(--color-base-content) 55%, transparent);
+  margin-top: 4px;
+}
+
+/* Buttons (dacă vrei custom, dar ideal folosești DaisyUI btn) */
+.controlBar {
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 10px;
+}
+
+.btn,
+.btnPrimary,
+.btnDanger {
+  padding: 10px 12px;
+  border-radius: var(--radius-field);
+  border: 1px solid color-mix(in oklab, var(--color-base-content) 12%, transparent);
+  background: var(--color-base-200);
+  font-weight: 900;
+  cursor: pointer;
+  color: var(--color-base-content);
+}
+
+.btnPrimary {
+  background: var(--color-primary);
+  color: var(--color-primary-content);
+  border-color: color-mix(in oklab, var(--color-primary) 80%, transparent);
+}
+
+.btnDanger {
+  background: var(--color-error);
+  color: var(--color-error-content);
+  border-color: color-mix(in oklab, var(--color-error) 80%, transparent);
+}
+
+.btn:hover,
+.btnPrimary:hover,
+.btnDanger:hover {
+  opacity: 0.92;
+}
+
+/* Metrics */
+.metricsGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+
+.metric {
+  border: 1px solid color-mix(in oklab, var(--color-base-content) 10%, transparent);
+  background: var(--color-base-200);
+  border-radius: var(--radius-box);
+  padding: 12px;
+}
+
+.metricLabel {
+  font-size: 12px;
+  color: color-mix(in oklab, var(--color-base-content) 55%, transparent);
+  font-weight: 900;
+}
+
+.metricValue {
+  margin-top: 8px;
+  font-size: 18px;
+  font-weight: 1000;
+  color: var(--color-base-content);
+}
+
+.metricSub {
+  margin-top: 6px;
+  font-size: 12px;
+  color: color-mix(in oklab, var(--color-base-content) 55%, transparent);
+  font-weight: 800;
+}
+
+/* Map placeholder */
+.map {
+  height: 520px;
+  border-radius: var(--radius-box);
+  border: 1px solid color-mix(in oklab, var(--color-base-content) 10%, transparent);
+  background: linear-gradient(
+    180deg,
+    color-mix(in oklab, var(--color-base-100) 70%, var(--color-base-200)) 0%,
+    var(--color-base-200) 100%
+  );
+  position: relative;
+  overflow: hidden;
+}
+
+.map::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(color-mix(in oklab, var(--color-base-content) 10%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in oklab, var(--color-base-content) 10%, transparent) 1px, transparent 1px);
+  background-size: 34px 34px;
+  opacity: 0.35;
+}
+
+.mapOverlay {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  display: flex;
+  gap: 8px;
+  z-index: 2;
+}
+
+.mapChip {
+  padding: 8px 10px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in oklab, var(--color-base-content) 12%, transparent);
+  background: color-mix(in oklab, var(--color-base-100) 75%, transparent);
+  font-size: 12px;
+  font-weight: 900;
+  color: var(--color-base-content);
+}
+
+.mapCenterHint {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  z-index: 1;
+  text-align: center;
+  color: color-mix(in oklab, var(--color-base-content) 55%, transparent);
+  font-weight: 900;
+}
+
+.mapCenterDot {
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: var(--color-base-content);
+  margin: 0 auto 10px;
+  box-shadow: 0 10px 30px color-mix(in oklab, var(--color-base-content) 25%, transparent);
+}
+
+.mapCenterText {
+  font-size: 12px;
+  line-height: 1.4;
 }
