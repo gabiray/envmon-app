@@ -76,13 +76,13 @@ def scan_devices():
 
 @devices_bp.post("/devices/select")
 def select_device():
-    """
-    Sets the active device by UUID (used for live control/proxy routes).
-    """
     payload = request.get_json(silent=True) or {}
     device_uuid = (payload.get("device_uuid") or "").strip()
-    if not device_uuid:
-        return jsonify({"ok": False, "error": "device_uuid is required"}), 400
+
+    # Allow clearing selection
+    if device_uuid in ("", "none", "null"):
+        store = set_active(None)
+        return jsonify({"ok": True, "active_device_uuid": store.get("active_device_uuid")})
 
     store = load_store()
     exists = any(d.get("device_uuid") == device_uuid for d in store.get("devices", []))
@@ -156,3 +156,4 @@ def set_device_nickname(device_uuid: str):
         return jsonify({"ok": True, "device_uuid": device_uuid, "nickname": nickname})
     except KeyError:
         return jsonify({"ok": False, "error": "device not found (scan first)"}), 404
+    

@@ -1,8 +1,10 @@
 import requests
 from .device_store import load_store, get_base_url_for
 
+
 class DeviceNotSelected(Exception):
     pass
+
 
 def get_active_base_url() -> str:
     store = load_store()

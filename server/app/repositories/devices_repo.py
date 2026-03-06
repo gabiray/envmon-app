@@ -3,6 +3,7 @@ from sqlalchemy import select
 from app.db.session import SessionLocal
 from app.db.models import Device
 
+
 class DevicesRepo:
     def upsert_seen(self, device_uuid: str, hostname: str | None, base_url: str | None):
         now = int(time.time())
@@ -46,3 +47,4 @@ class DevicesRepo:
                     "last_base_url": d.last_base_url,
                 }
             return out
+        

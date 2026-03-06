@@ -3,12 +3,19 @@ import MissionPanelInline from "./MissionPanelInline";
 import EmbeddedStartPointMap from "../map/EmbeddedStartPointMap";
 
 export default function MissionMapPanel({
-  deviceStatus = "connected",
+  deviceStatus = "inactive",
   startPoints = [],
   selectedStartPointId = null,
   onAddStartPoint = () => {},
   onSelectStartPoint = () => {},
   metrics,
+
+  // Mission lifecycle props
+  missionRunning = false,
+  busy = false,
+  onStartMission = () => {},
+  onStopMission = () => {},
+  onAbortMission = () => {},
 }) {
   return (
     <div className="card bg-base-100 border border-base-300 shadow-sm overflow-hidden">
@@ -20,6 +27,11 @@ export default function MissionMapPanel({
             startPoints={startPoints}
             selectedStartPointId={selectedStartPointId}
             onSelectStartPoint={onSelectStartPoint}
+            missionRunning={missionRunning}
+            busy={busy}
+            onStartMission={onStartMission}
+            onStopMission={onStopMission}
+            onAbortMission={onAbortMission}
           />
         </div>
 

@@ -2,6 +2,7 @@ from sqlalchemy import Column, String, Integer, Float, ForeignKey, Text
 from sqlalchemy.orm import relationship
 from ..session import Base
 
+
 class Mission(Base):
     __tablename__ = "missions"
 
@@ -33,3 +34,4 @@ class Mission(Base):
 
     telemetry = relationship("TelemetryPoint", back_populates="mission", cascade="all, delete-orphan")
     images = relationship("MissionImage", back_populates="mission", cascade="all, delete-orphan")
+    

@@ -4,6 +4,7 @@ from app.services.device_client import DeviceNotSelected
 
 sync_bp = Blueprint("sync", __name__)
 
+
 @sync_bp.post("/sync/active/import-new")
 def sync_active_import_new():
     try:
@@ -14,3 +15,4 @@ def sync_active_import_new():
         return jsonify({"ok": False, "error": str(e)}), 400
     except Exception as e:
         return jsonify({"ok": False, "error": f"Sync failed: {e}"}), 500
+    

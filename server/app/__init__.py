@@ -4,6 +4,7 @@ from .extensions import cors
 from .api import register_blueprints
 from app.db.session import init_db
 
+
 def create_app():
     init_db()
     

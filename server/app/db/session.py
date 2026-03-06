@@ -12,7 +12,9 @@ engine = create_engine(
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
 Base = declarative_base()
 
+
 def init_db():
     # IMPORTANT: import models so Base.metadata is populated
-    from .models import device, mission, telemetry, image  # noqa
+    from .models import device, mission, telemetry, image, start_point  # noqa
     Base.metadata.create_all(bind=engine)
+    

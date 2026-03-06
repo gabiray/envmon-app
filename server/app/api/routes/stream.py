@@ -3,6 +3,7 @@ from flask import Blueprint, Response
 
 stream_bp = Blueprint("stream", __name__)
 
+
 @stream_bp.get("/stream")
 def stream():
 

@@ -2,6 +2,7 @@ from sqlalchemy import Column, Integer, Float, String, ForeignKey
 from sqlalchemy.orm import relationship
 from ..session import Base
 
+
 class TelemetryPoint(Base):
     __tablename__ = "telemetry_points"
 
@@ -23,3 +24,4 @@ class TelemetryPoint(Base):
     gas_ohms = Column(Float, nullable=True)
 
     mission = relationship("Mission", back_populates="telemetry")
+    

@@ -1,6 +1,7 @@
 from sqlalchemy import Column, String, Integer
 from ..session import Base
 
+
 class Device(Base):
     __tablename__ = "devices"
 
@@ -10,3 +11,4 @@ class Device(Base):
     first_seen_epoch = Column(Integer, nullable=False)
     last_seen_epoch = Column(Integer, nullable=False)
     last_base_url = Column(String, nullable=True)
+    

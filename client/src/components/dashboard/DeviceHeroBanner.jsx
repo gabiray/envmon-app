@@ -1,60 +1,113 @@
 import React, { useMemo } from "react";
+import {
+  FiServer,
+  FiWifi,
+  FiClock,
+  FiHash,
+  FiRadio,
+  FiAlertTriangle,
+  FiSlash,
+} from "react-icons/fi";
 import droneLogo from "../../assets/drone-flying-mountain-landscape.jpg";
+
+function showNone(value) {
+  if (value === null || value === undefined) return "None";
+  const s = String(value).trim();
+  if (!s || s === "-" || s === "—" || s.toLowerCase() === "null") return "None";
+  return s;
+}
 
 function getStatusMeta(status) {
   if (status === "connected") {
     return {
       label: "Connected",
-      dot: "status status-success status-sm",
       hint: "Ready for missions",
-      badge:
-        "badge badge-outline border-neutral-content/30 text-neutral-content",
+      tone: "success",
+      Icon: FiRadio,
+      badge: "badge badge-outline border-success/40 text-success bg-success/5",
+      pulsing: true,
     };
   }
 
   if (status === "out_of_range") {
     return {
       label: "Out of range",
-      dot: "status status-warning status-sm",
-      hint: "Connection lost during mission",
-      badge: "badge badge-outline border-warning/40 text-warning",
+      hint: "Connection lost",
+      tone: "warning",
+      Icon: FiAlertTriangle,
+      badge: "badge badge-outline border-warning/40 text-warning bg-warning/5",
+      pulsing: false,
     };
   }
 
   return {
     label: "Inactive",
-    dot: "status status-neutral status-sm",
     hint: "Select a device to enable missions",
+    tone: "neutral",
+    Icon: FiSlash,
     badge:
       "badge badge-outline border-neutral-content/20 text-neutral-content/80",
+    pulsing: false,
   };
 }
 
+function StatusDot({ tone = "neutral", pulsing = false }) {
+  const color =
+    tone === "success"
+      ? "bg-success"
+      : tone === "warning"
+        ? "bg-warning"
+        : "bg-neutral-content/60";
+
+  return (
+    <span className="relative inline-flex h-2.5 w-2.5">
+      {pulsing && (
+        <span
+          className={`absolute inline-flex h-full w-full rounded-full ${color} opacity-60 animate-ping`}
+          aria-hidden="true"
+        />
+      )}
+      <span
+        className={`relative inline-flex h-2.5 w-2.5 rounded-full ${color}`}
+        aria-hidden="true"
+      />
+    </span>
+  );
+}
+
 export default function DeviceHeroBanner({
-  status = "connected",
+  status = "inactive",
   device = {
-    nickname: "Drona 1",
-    hostname: "raspberrypi",
-    uuid: "2e004ee8-…-56adf",
-    ip: "192.168.137.92",
-    lastSeenText: "a few seconds ago",
+    nickname: null,
+    hostname: null,
+    uuid: null,
+    ip: null,
+    lastSeenText: null,
   },
 }) {
   const meta = useMemo(() => getStatusMeta(status), [status]);
 
+  const nickname = showNone(device.nickname);
+  const hostname = showNone(device.hostname);
+  const ip = showNone(device.ip);
+  const lastSeenText = showNone(device.lastSeenText);
+  const uuid = showNone(device.uuid);
+
+  const StatusIcon = meta.Icon;
+
   return (
     <section className="relative overflow-hidden rounded-box border border-base-300 bg-neutral text-neutral-content">
-      {/* Background image (RIGHT) */}
+      {/* Background image */}
       <div
         className="absolute inset-0 bg-cover"
         style={{
           backgroundImage: `url(${droneLogo})`,
-          backgroundPosition: "center 30%", 
+          backgroundPosition: "center 30%",
         }}
         aria-hidden="true"
       />
 
-      {/* Dark overlay + left-to-right gradient (MEDIUM) */}
+      {/* Dark overlay + left-to-right gradient */}
       <div
         className="absolute inset-0"
         aria-hidden="true"
@@ -64,7 +117,7 @@ export default function DeviceHeroBanner({
         }}
       />
 
-      {/* Optional: soft vignette (subtil) */}
+      {/* Soft vignette */}
       <div
         className="absolute inset-0"
         aria-hidden="true"
@@ -76,7 +129,6 @@ export default function DeviceHeroBanner({
         }}
       />
 
-      {/* Content */}
       <div className="relative p-6 sm:p-7">
         <div className="flex items-start justify-between gap-4">
           {/* LEFT */}
@@ -84,37 +136,44 @@ export default function DeviceHeroBanner({
             <div className="text-xs sm:text-sm opacity-75">Active device</div>
 
             <div className="mt-1 text-2xl sm:text-3xl font-semibold leading-tight truncate">
-              {device.nickname}
+              {nickname}
             </div>
 
-            <div className="mt-2 flex flex-wrap gap-x-2 gap-y-1 text-sm opacity-80">
-              <span className="inline-flex items-center gap-2">
+            <div className="mt-3 grid gap-1.5 text-sm opacity-85">
+              <div className="flex items-center gap-2">
+                <FiServer className="opacity-80" />
                 <span className="opacity-70">Host:</span>
-                <span className="font-medium">{device.hostname}</span>
-              </span>
-              <span className="opacity-40">•</span>
-              <span className="inline-flex items-center gap-2">
+                <span className="font-medium truncate">{hostname}</span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <FiWifi className="opacity-80" />
                 <span className="opacity-70">IP:</span>
-                <span className="font-medium">{device.ip}</span>
-              </span>
-              <span className="opacity-40">•</span>
-              <span className="inline-flex items-center gap-2">
+                <span className="font-medium truncate">{ip}</span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <FiClock className="opacity-80" />
                 <span className="opacity-70">Last seen:</span>
-                <span className="font-medium">{device.lastSeenText}</span>
-              </span>
+                <span className="font-medium truncate">{lastSeenText}</span>
+              </div>
             </div>
 
-            <div className="mt-3 text-xs opacity-80">
-              UUID: <span className="font-mono">{device.uuid}</span>
+            <div className="mt-4 text-xs opacity-85">
+              UUID: <span className="font-mono break-all">{uuid}</span>
             </div>
           </div>
 
           {/* RIGHT */}
           <div className="flex flex-col items-end gap-2 shrink-0">
             <span className={meta.badge}>
-              <span className={meta.dot} aria-hidden="true" />
-              <span className="ml-2">{meta.label}</span>
+              <StatusDot tone={meta.tone} pulsing={meta.pulsing} />
+              <span className="ml-2 inline-flex items-center gap-2">
+                <StatusIcon />
+                {meta.label}
+              </span>
             </span>
+
             <div className="text-xs opacity-70 text-right">{meta.hint}</div>
           </div>
         </div>

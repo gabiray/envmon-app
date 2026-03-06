@@ -40,17 +40,22 @@ export default function EmbeddedStartPointMap({
     setModalOpen(true);
   }
 
-  function handleSave(name) {
-    const newPoint = {
-      id: crypto.randomUUID(),
-      name,
-      latlng: pendingLatLng,
-      createdAt: new Date().toISOString(),
-    };
-    onAddStartPoint(newPoint);
-    onSelectStartPoint(newPoint.id);
-    setModalOpen(false);
-    setPendingLatLng(null);
+  async function handleSave(name) {
+    if (!pendingLatLng) return;
+
+    try {
+      const created = await onAddStartPoint({
+        name,
+        latlng: pendingLatLng,
+      });
+
+      if (created?.id) {
+        onSelectStartPoint(created.id);
+      }
+    } finally {
+      setModalOpen(false);
+      setPendingLatLng(null);
+    }
   }
 
   return (

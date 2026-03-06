@@ -9,6 +9,7 @@ from app.services.mission_importer import MissionImporter
 DATA_DIR = Path(__file__).resolve().parents[2] / "data"
 TMP_ZIPS = DATA_DIR / "tmp_zips"
 
+
 class SyncService:
     def __init__(self):
         self.missions_repo = MissionsRepo()
@@ -92,3 +93,4 @@ class SyncService:
             "skipped": skipped,
             "errors": errors,
         }
+        

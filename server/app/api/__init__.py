@@ -5,6 +5,8 @@ from .routes.missions import missions_bp
 from .routes.stream import stream_bp
 from app.api.routes.sync import sync_bp
 from app.api.routes.missions_db import missions_db_bp
+from app.api.routes.start_points import start_points_bp
+
 
 def register_blueprints(app):
     app.register_blueprint(health_bp, url_prefix="/api")
@@ -14,3 +16,4 @@ def register_blueprints(app):
     app.register_blueprint(stream_bp, url_prefix="/api")
     app.register_blueprint(sync_bp, url_prefix="/api")
     app.register_blueprint(missions_db_bp, url_prefix="/api")
+    app.register_blueprint(start_points_bp, url_prefix="/api")

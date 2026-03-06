@@ -2,6 +2,7 @@ from sqlalchemy import select, delete
 from app.db.session import SessionLocal
 from app.db.models import Mission, TelemetryPoint, MissionImage
 
+
 class MissionsRepo:
     def exists(self, mission_id: str) -> bool:
         with SessionLocal() as db:

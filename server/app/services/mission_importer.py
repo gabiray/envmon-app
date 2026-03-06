@@ -13,6 +13,7 @@ from app.repositories.devices_repo import DevicesRepo
 DATA_DIR = Path(__file__).resolve().parents[2] / "data"
 IMPORT_ROOT = DATA_DIR / "imports"
 
+
 def _to_float(v):
     if v is None:
         return None
@@ -24,9 +25,11 @@ def _to_float(v):
     except Exception:
         return None
 
+
 def _to_int(v):
     f = _to_float(v)
     return None if f is None else int(f)
+
 
 @dataclass
 class ImportResult:
@@ -40,6 +43,7 @@ class ImportResult:
     start_alt_m: float | None
     raw_zip_path: str
     unpacked_path: str
+
 
 class MissionImporter:
     def __init__(self):
@@ -217,3 +221,4 @@ class MissionImporter:
             raw_zip_path=str(raw_zip_final),
             unpacked_path=str(unpack_dir),
         )
+        

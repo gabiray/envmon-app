@@ -2,6 +2,7 @@ from sqlalchemy import Column, Integer, Float, String, ForeignKey
 from sqlalchemy.orm import relationship
 from ..session import Base
 
+
 class MissionImage(Base):
     __tablename__ = "mission_images"
 
@@ -17,3 +18,4 @@ class MissionImage(Base):
     path = Column(String, nullable=False)
 
     mission = relationship("Mission", back_populates="images")
+    
