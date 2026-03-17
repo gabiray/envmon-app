@@ -8,23 +8,59 @@ from app.repositories.devices_repo import DevicesRepo
 
 devices_bp = Blueprint("devices", __name__)
 
+PROFILE_CATALOG = {
+    "drone": "Drone",
+    "bicycle": "Bicycle",
+    "car": "Car",
+    "static": "Static Station",
+}
+
+
+def _normalize_profile(profile_type: str, profile_label: str | None = None) -> tuple[str, str]:
+    pt = str(profile_type or "").strip().lower()
+    if pt not in PROFILE_CATALOG:
+        raise ValueError("invalid profile_type")
+
+    label = str(profile_label or "").strip() or PROFILE_CATALOG[pt]
+    return pt, label
+
 
 def _enrich_devices(store_devices: list[dict], db_map: dict[str, dict]) -> list[dict]:
     enriched = []
+
     for d in store_devices or []:
         rec = db_map.get(d.get("device_uuid"))
+
         enriched.append({
             **d,
-            "known": bool(rec and rec.get("nickname")),
+            "known": bool(rec),
             "nickname": rec.get("nickname") if rec else None,
+            "active_profile_type": rec.get("active_profile_type") if rec else None,
+            "active_profile_label": rec.get("active_profile_label") if rec else None,
+            "is_configured": bool(rec and rec.get("is_configured")),
+            "needs_setup": bool(rec and rec.get("needs_setup")),
         })
+
     return enriched
+
+
+@devices_bp.get("/device-profiles")
+def list_device_profiles():
+    return jsonify({
+        "items": [
+            {"type": k, "label": v}
+            for k, v in PROFILE_CATALOG.items()
+        ]
+    })
 
 
 @devices_bp.get("/devices")
 def list_devices():
     """
-    Returns cached scan store, enriched with DB fields (nickname/known).
+    Returns cached scan store, enriched with DB fields:
+      - nickname
+      - active profile
+      - configured/setup state
     """
     store = load_store()
     repo = DevicesRepo()
@@ -37,21 +73,29 @@ def list_devices():
 @devices_bp.post("/devices/scan")
 def scan_devices():
     """
-    Scans LAN for EnvMon devices (identified only by GET /info).
+    Scans LAN for EnvMon devices.
     Updates:
-      - local store (devices.json) with last_base_url
-      - DB devices table (seen + hostname + last_base_url)
-    Returns enriched device list including nickname/known.
+      - local store (devices.json)
+      - DB devices table
+    Returns:
+      - enriched devices
+      - newly discovered device UUIDs
+      - newly discovered enriched devices
     """
     payload = request.get_json(silent=True) or {}
     cidr = payload.get("cidr") or None
 
+    store_before = load_store()
+    known_before = {
+        d.get("device_uuid")
+        for d in (store_before.get("devices") or [])
+        if d.get("device_uuid")
+    }
+
     found = scan_network(cidr=cidr)
 
-    # 1) Update local store cache
     store = upsert_devices(found)
 
-    # 2) Upsert found devices into DB
     repo = DevicesRepo()
     for d in found:
         info = d.get("info") or {}
@@ -61,9 +105,19 @@ def scan_devices():
             base_url=d.get("base_url"),
         )
 
-    # 3) Enrich response with nickname/known from DB
     db_map = repo.get_map()
     enriched = _enrich_devices(store.get("devices", []), db_map)
+
+    new_device_uuids = [
+        d.get("device_uuid")
+        for d in found
+        if d.get("device_uuid") and d.get("device_uuid") not in known_before
+    ]
+
+    new_devices = [
+        d for d in enriched
+        if d.get("device_uuid") in set(new_device_uuids)
+    ]
 
     return jsonify({
         "ok": True,
@@ -71,6 +125,8 @@ def scan_devices():
         "found_count": len(found),
         "devices": enriched,
         "active_device_uuid": store.get("active_device_uuid"),
+        "new_device_uuids": new_device_uuids,
+        "new_devices": new_devices,
     })
 
 
@@ -79,8 +135,7 @@ def select_device():
     payload = request.get_json(silent=True) or {}
     device_uuid = (payload.get("device_uuid") or "").strip()
 
-    # Allow clearing selection
-    if device_uuid in ("", "none", "null"):
+    if device_uuid.lower() in ("", "none", "null"):
         store = set_active(None)
         return jsonify({"ok": True, "active_device_uuid": store.get("active_device_uuid")})
 
@@ -96,7 +151,7 @@ def select_device():
 @devices_bp.post("/devices/add")
 def add_device_manual():
     """
-    Manual add by base_url (optional).
+    Manual add by base_url.
     Fetches UUID via /info, then upserts both local store and DB.
     """
     payload = request.get_json(silent=True) or {}
@@ -126,34 +181,85 @@ def add_device_manual():
             "info": info,
         }]
 
-        # update store + DB
         store = upsert_devices(found)
-        DevicesRepo().upsert_seen(device_uuid=device_uuid, hostname=info.get("hostname"), base_url=base_url)
+        DevicesRepo().upsert_seen(
+            device_uuid=device_uuid,
+            hostname=info.get("hostname"),
+            base_url=base_url,
+        )
 
-        # enrich response
         db_map = DevicesRepo().get_map()
         enriched = _enrich_devices(store.get("devices", []), db_map)
 
         return jsonify({"ok": True, "devices": enriched})
-
     except Exception as e:
         return jsonify({"ok": False, "error": f"Manual add failed: {e}"}), 502
 
 
 @devices_bp.post("/devices/<device_uuid>/nickname")
 def set_device_nickname(device_uuid: str):
-    """
-    Sets a user-friendly nickname for a device (stored in DB).
-    """
     payload = request.get_json(silent=True) or {}
     nickname = (payload.get("nickname") or "").strip()
+
     if not nickname:
         return jsonify({"ok": False, "error": "nickname is required"}), 400
 
     repo = DevicesRepo()
     try:
         repo.set_nickname(device_uuid, nickname)
-        return jsonify({"ok": True, "device_uuid": device_uuid, "nickname": nickname})
+        rec = repo.get_one(device_uuid)
+        return jsonify({"ok": True, "device": rec})
+    except KeyError:
+        return jsonify({"ok": False, "error": "device not found (scan first)"}), 404
+
+
+@devices_bp.post("/devices/<device_uuid>/profile")
+def set_device_profile(device_uuid: str):
+    payload = request.get_json(silent=True) or {}
+
+    try:
+        profile_type, profile_label = _normalize_profile(
+            payload.get("profile_type"),
+            payload.get("profile_label"),
+        )
+    except ValueError:
+        return jsonify({
+            "ok": False,
+            "error": "profile_type must be one of: drone, bicycle, car, static",
+        }), 400
+
+    repo = DevicesRepo()
+    try:
+        repo.set_profile(device_uuid, profile_type, profile_label)
+        rec = repo.get_one(device_uuid)
+        return jsonify({"ok": True, "device": rec})
+    except KeyError:
+        return jsonify({"ok": False, "error": "device not found (scan first)"}), 404
+
+
+@devices_bp.post("/devices/<device_uuid>/configure")
+def configure_device(device_uuid: str):
+    payload = request.get_json(silent=True) or {}
+
+    nickname = str(payload.get("nickname") or "").strip()
+    if not nickname:
+        return jsonify({"ok": False, "error": "nickname is required"}), 400
+
+    try:
+        profile_type, profile_label = _normalize_profile(
+            payload.get("profile_type"),
+            payload.get("profile_label"),
+        )
+    except ValueError:
+        return jsonify({
+            "ok": False,
+            "error": "profile_type must be one of: drone, bicycle, car, static",
+        }), 400
+
+    repo = DevicesRepo()
+    try:
+        rec = repo.configure(device_uuid, nickname, profile_type, profile_label)
+        return jsonify({"ok": True, "device": rec})
     except KeyError:
         return jsonify({"ok": False, "error": "device not found (scan first)"}), 404
     

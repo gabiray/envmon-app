@@ -36,6 +36,7 @@ class SyncService:
         res = self.importer.import_zip(device_uuid=device_uuid, hostname=hostname, base_url=base_url, zip_path=zip_path)
         return {
             "mission_id": res.mission_id,
+            "mission_name": res.mission_name,
             "telemetry_rows": res.telemetry_rows,
             "image_rows": res.image_rows,
             "has_gps": res.has_gps,

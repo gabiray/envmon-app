@@ -1,6 +1,9 @@
 from flask import Blueprint, jsonify, request, Response
 import requests
 
+from app.services.device_store import load_store
+from app.repositories.devices_repo import DevicesRepo
+
 from ...services.device_client import DeviceClient, DeviceNotSelected
 
 missions_bp = Blueprint("missions", __name__)
@@ -22,6 +25,29 @@ def list_missions():
 def start_mission():
     try:
         payload = request.get_json(silent=True) or {}
+
+        mission_name = str(payload.get("mission_name") or "").strip()
+        payload["mission_name"] = mission_name
+
+        store = load_store()
+        active_uuid = store.get("active_device_uuid")
+        if not active_uuid:
+            return jsonify({"ok": False, "error": "No active device selected"}), 400
+
+        repo = DevicesRepo()
+        device_rec = repo.get_one(active_uuid)
+        if not device_rec:
+            return jsonify({"ok": False, "error": "Active device not found in DB"}), 404
+
+        profile_type = str(device_rec.get("active_profile_type") or "").strip()
+        profile_label = str(device_rec.get("active_profile_label") or "").strip()
+
+        if not profile_type:
+            return jsonify({"ok": False, "error": "Active device has no selected profile"}), 400
+
+        payload["profile_type"] = profile_type
+        payload["profile_label"] = profile_label
+
         dc = DeviceClient()
         r = dc.post("/missions/start", payload, timeout=10)
         return jsonify(r.json()), r.status_code
@@ -57,9 +83,6 @@ def abort_mission():
 
 @missions_bp.get("/missions/<mission_id>/export")
 def export_mission(mission_id: str):
-    """
-    Streams the ZIP from device to browser via app server (no CORS headache).
-    """
     try:
         dc = DeviceClient()
         url = dc.base_url + f"/missions/{mission_id}/export"
@@ -86,3 +109,4 @@ def export_mission(mission_id: str):
         return jsonify({"ok": False, "error": str(e)}), 400
     except Exception as e:
         return jsonify({"ok": False, "error": f"Device unreachable: {e}"}), 502
+    

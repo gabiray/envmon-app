@@ -98,3 +98,12 @@
 .userMeta{ line-height: 1.1; }
 .userName{ font-weight: 700; font-size: 13px; }
 .userRole{ font-size: 12px; opacity: .7; margin-top: 4px; }
+
+.noScrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.noScrollbar::-webkit-scrollbar {
+  display: none;
+}

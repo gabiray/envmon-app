@@ -1,15 +1,20 @@
 import json
 import time
+import uuid
+import os
 from pathlib import Path
+from threading import Lock
 
 DATA_DIR = Path(__file__).resolve().parents[2] / "data"
 STORE_FILE = DATA_DIR / "devices.json"
+
+_STORE_LOCK = Lock()
 
 
 def _default_store():
     return {
         "active_device_uuid": None,
-        "devices": [],  # list of {device_uuid, name, base_url, last_seen_epoch, health?}
+        "devices": [],
         "updated_epoch": int(time.time()),
     }
 
@@ -18,13 +23,14 @@ def load_store() -> dict:
     try:
         if not STORE_FILE.exists():
             return _default_store()
+
         s = json.loads(STORE_FILE.read_text(encoding="utf-8"))
 
-        # Optional: auto-migrate older format (active_base_url/devices with base_url keys)
         if "active_device_uuid" not in s:
             s["active_device_uuid"] = None
         if "devices" not in s or not isinstance(s["devices"], list):
             s["devices"] = []
+
         return s
     except Exception:
         return _default_store()
@@ -33,9 +39,30 @@ def load_store() -> dict:
 def save_store(store: dict) -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     store["updated_epoch"] = int(time.time())
-    tmp = STORE_FILE.with_suffix(".tmp")
-    tmp.write_text(json.dumps(store, indent=2), encoding="utf-8")
-    tmp.replace(STORE_FILE)
+
+    payload = json.dumps(store, indent=2, ensure_ascii=False)
+
+    with _STORE_LOCK:
+        # unique temp file avoids collisions between near-simultaneous writes
+        tmp = STORE_FILE.with_name(f"{STORE_FILE.stem}.{uuid.uuid4().hex}.tmp")
+        tmp.write_text(payload, encoding="utf-8")
+
+        last_err = None
+        for _ in range(8):
+            try:
+                os.replace(tmp, STORE_FILE)
+                return
+            except PermissionError as e:
+                last_err = e
+                time.sleep(0.05)
+
+        try:
+            tmp.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+        if last_err:
+            raise last_err
 
 
 def upsert_devices(found: list[dict]) -> dict:
@@ -54,13 +81,21 @@ def upsert_devices(found: list[dict]) -> dict:
             "info": d.get("info"),
         }
 
-    store["devices"] = sorted(by_uuid.values(), key=lambda x: x.get("last_seen_epoch", 0), reverse=True)
+    store["devices"] = sorted(
+        by_uuid.values(),
+        key=lambda x: x.get("last_seen_epoch", 0),
+        reverse=True,
+    )
     save_store(store)
     return store
 
 
 def set_active(device_uuid: str | None) -> dict:
     store = load_store()
+
+    if store.get("active_device_uuid") == device_uuid:
+        return store
+
     store["active_device_uuid"] = device_uuid
     save_store(store)
     return store

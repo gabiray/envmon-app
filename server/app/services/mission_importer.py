@@ -34,6 +34,7 @@ def _to_int(v):
 @dataclass
 class ImportResult:
     mission_id: str
+    mission_name: str
     telemetry_rows: int
     image_rows: int
     has_gps: bool
@@ -78,6 +79,11 @@ class MissionImporter:
         mission_id = meta.get("mission_id")
         if not mission_id:
             raise RuntimeError("meta.json missing mission_id")
+        
+        mission_name = str(meta.get("mission_name") or "").strip() or str(mission_id)
+        
+        profile_type = str(meta.get("profile_type") or "").strip() or None
+        profile_label = str(meta.get("profile_label") or "").strip() or None
 
         # Final storage
         mission_dir = IMPORT_ROOT / device_uuid / mission_id
@@ -186,7 +192,10 @@ class MissionImporter:
 
         mission = Mission(
             mission_id=mission_id,
+            mission_name=mission_name,
             device_uuid=device_uuid,
+            profile_type=profile_type,
+            profile_label=profile_label,
             created_at_epoch=created_at,
             started_at_epoch=started_at,
             ended_at_epoch=ended_at,
@@ -211,6 +220,7 @@ class MissionImporter:
 
         return ImportResult(
             mission_id=mission_id,
+            mission_name=mission_name,
             telemetry_rows=len(telemetry_objs),
             image_rows=len(image_objs),
             has_gps=has_gps,

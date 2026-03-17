@@ -1,5 +1,49 @@
 import React, { useMemo } from "react";
-import { FiMenu, FiRefreshCw, FiChevronDown, FiCpu } from "react-icons/fi";
+import {
+  FiMenu,
+  FiRefreshCw,
+  FiChevronDown,
+  FiCpu,
+  FiMapPin,
+} from "react-icons/fi";
+import { FaCarSide } from "react-icons/fa";
+import { MdDirectionsBike } from "react-icons/md";
+import { TbDrone } from "react-icons/tb";
+
+function getProfileMeta(type) {
+  if (type === "drone") {
+    return {
+      label: "Drone",
+      Icon: TbDrone,
+    };
+  }
+
+  if (type === "bicycle") {
+    return {
+      label: "Bicycle",
+      Icon: MdDirectionsBike,
+    };
+  }
+
+  if (type === "car") {
+    return {
+      label: "Car",
+      Icon: FaCarSide,
+    };
+  }
+
+  if (type === "static") {
+    return {
+      label: "Static Station",
+      Icon: FiMapPin,
+    };
+  }
+
+  return {
+    label: "Drone",
+    Icon: TbDrone,
+  };
+}
 
 export default function Topbar({
   pageTitle,
@@ -8,15 +52,31 @@ export default function Topbar({
   onDeviceChange = () => {},
   onScan = () => {},
   isScanning = false,
+
+  profiles = [],
+  selectedProfileType = "",
+  onProfileChange = () => {},
+  profileDisabled = false,
+
+  newDevicesCount = 0,
 }) {
   const hasDevices = devices.length > 0;
 
-  const selected = useMemo(() => {
+  const selectedDevice = useMemo(() => {
     if (!hasDevices) return null;
     return devices.find((d) => d.id === selectedDeviceId) || devices[0];
   }, [devices, hasDevices, selectedDeviceId]);
 
-  const selectedLabel = selected?.label || "No devices";
+  const selectedDeviceLabel = selectedDevice?.label || "No Device";
+
+  const selectedProfile = useMemo(() => {
+    if (!profiles.length) return getProfileMeta(selectedProfileType);
+
+    const found = profiles.find((p) => p.type === selectedProfileType);
+    return getProfileMeta(found?.type || selectedProfileType);
+  }, [profiles, selectedProfileType]);
+
+  const SelectedProfileIcon = selectedProfile.Icon;
 
   return (
     <header className="sticky top-0 z-30">
@@ -40,7 +100,6 @@ export default function Topbar({
           <div className="flex items-center gap-2">
             <span className="text-sm opacity-70 hidden sm:inline">Device</span>
 
-            {/* Custom dropdown to avoid native <select> checkmark */}
             <div className="dropdown dropdown-end">
               <button
                 type="button"
@@ -52,14 +111,14 @@ export default function Topbar({
               >
                 <span className="inline-flex items-center gap-2 min-w-0">
                   <FiCpu className="opacity-70 shrink-0" />
-                  <span className="truncate">{selectedLabel}</span>
+                  <span className="truncate">{selectedDeviceLabel}</span>
                 </span>
                 <FiChevronDown className="opacity-70 shrink-0" />
               </button>
 
               <ul
                 tabIndex={0}
-                className="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-56 border border-base-200"
+                className="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-64 border border-base-200"
               >
                 {!hasDevices ? (
                   <li>
@@ -70,11 +129,18 @@ export default function Topbar({
                     <li key={d.id}>
                       <button
                         type="button"
-                        className={d.id === selected?.id ? "active" : ""}
+                        className={d.id === selectedDevice?.id ? "active" : ""}
                         onClick={() => onDeviceChange(d.id)}
                       >
-                        <FiCpu className="opacity-70" />
-                        <span className="truncate">{d.label}</span>
+                        <FiCpu className="opacity-70 shrink-0" />
+                        <div className="min-w-0 text-left">
+                          <div className="truncate">{d.label}</div>
+                          {d.subtitle ? (
+                            <div className="text-[11px] opacity-60 truncate">
+                              {d.subtitle}
+                            </div>
+                          ) : null}
+                        </div>
                       </button>
                     </li>
                   ))
@@ -82,8 +148,50 @@ export default function Topbar({
               </ul>
             </div>
 
+            <div className="dropdown dropdown-end">
+              <button
+                type="button"
+                tabIndex={0}
+                className="btn btn-sm btn-outline rounded-xl w-12 min-w-12 px-0"
+                disabled={profileDisabled}
+                aria-label="Select profile"
+                title={selectedProfile.label}
+              >
+                <SelectedProfileIcon className="text-base opacity-85" />
+              </button>
+
+              <ul
+                tabIndex={0}
+                className="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-56 border border-base-200"
+              >
+                {profiles.length === 0 ? (
+                  <li>
+                    <span className="opacity-70">No profiles</span>
+                  </li>
+                ) : (
+                  profiles.map((p) => {
+                    const meta = getProfileMeta(p.type);
+                    const Icon = meta.Icon;
+
+                    return (
+                      <li key={p.type}>
+                        <button
+                          type="button"
+                          className={p.type === selectedProfileType ? "active" : ""}
+                          onClick={() => onProfileChange(p.type)}
+                        >
+                          <Icon className="opacity-80 shrink-0" />
+                          <span>{p.label || meta.label}</span>
+                        </button>
+                      </li>
+                    );
+                  })
+                )}
+              </ul>
+            </div>
+
             <button
-              className="btn btn-sm btn-primary rounded-xl"
+              className="btn btn-sm btn-primary rounded-xl relative"
               onClick={onScan}
               disabled={isScanning}
               aria-label="Scan for devices"
@@ -93,6 +201,12 @@ export default function Topbar({
               <span className="hidden sm:inline">
                 {isScanning ? "Scanning" : "Scan"}
               </span>
+
+              {newDevicesCount > 0 && !isScanning ? (
+                <span className="badge badge-xs badge-secondary absolute -top-2 -right-2">
+                  {newDevicesCount}
+                </span>
+              ) : null}
             </button>
           </div>
         </div>

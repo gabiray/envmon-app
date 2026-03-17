@@ -3,7 +3,6 @@ import {
   FiServer,
   FiWifi,
   FiClock,
-  FiHash,
   FiRadio,
   FiAlertTriangle,
   FiSlash,
@@ -24,7 +23,9 @@ function getStatusMeta(status) {
       hint: "Ready for missions",
       tone: "success",
       Icon: FiRadio,
-      badge: "badge badge-outline border-success/40 text-success bg-success/5",
+      statusClass: "status status-success",
+      badge:
+        "badge badge-outline border-success/30 text-success bg-base-100/10 backdrop-blur-sm",
       pulsing: true,
     };
   }
@@ -35,7 +36,9 @@ function getStatusMeta(status) {
       hint: "Connection lost",
       tone: "warning",
       Icon: FiAlertTriangle,
-      badge: "badge badge-outline border-warning/40 text-warning bg-warning/5",
+      statusClass: "status status-warning",
+      badge:
+        "badge badge-outline border-warning/30 text-warning bg-base-100/10 backdrop-blur-sm",
       pulsing: false,
     };
   }
@@ -45,33 +48,21 @@ function getStatusMeta(status) {
     hint: "Select a device to enable missions",
     tone: "neutral",
     Icon: FiSlash,
+    statusClass: "status status-neutral",
     badge:
-      "badge badge-outline border-neutral-content/20 text-neutral-content/80",
+      "badge badge-outline border-base-content/20 text-base-content/80 bg-base-100/10 backdrop-blur-sm",
     pulsing: false,
   };
 }
 
-function StatusDot({ tone = "neutral", pulsing = false }) {
-  const color =
-    tone === "success"
-      ? "bg-success"
-      : tone === "warning"
-        ? "bg-warning"
-        : "bg-neutral-content/60";
-
+function StatusIndicator({ statusClass, pulsing = false }) {
   return (
-    <span className="relative inline-flex h-2.5 w-2.5">
+    <div className="inline-grid shrink-0 *:[grid-area:1/1]">
       {pulsing && (
-        <span
-          className={`absolute inline-flex h-full w-full rounded-full ${color} opacity-60 animate-ping`}
-          aria-hidden="true"
-        />
+        <div className={`${statusClass} animate-ping`} aria-hidden="true" />
       )}
-      <span
-        className={`relative inline-flex h-2.5 w-2.5 rounded-full ${color}`}
-        aria-hidden="true"
-      />
-    </span>
+      <div className={statusClass} aria-hidden="true" />
+    </div>
   );
 }
 
@@ -132,10 +123,10 @@ export default function DeviceHeroBanner({
       <div className="relative p-6 sm:p-7">
         <div className="flex items-start justify-between gap-4">
           {/* LEFT */}
-          <div className="min-w-0 max-w-195">
+          <div className="min-w-0 max-w-3xl">
             <div className="text-xs sm:text-sm opacity-75">Active device</div>
 
-            <div className="mt-1 text-2xl sm:text-3xl font-semibold leading-tight truncate">
+            <div className="mt-1 truncate text-2xl font-semibold leading-tight sm:text-3xl">
               {nickname}
             </div>
 
@@ -143,38 +134,43 @@ export default function DeviceHeroBanner({
               <div className="flex items-center gap-2">
                 <FiServer className="opacity-80" />
                 <span className="opacity-70">Host:</span>
-                <span className="font-medium truncate">{hostname}</span>
+                <span className="truncate font-medium">{hostname}</span>
               </div>
 
               <div className="flex items-center gap-2">
                 <FiWifi className="opacity-80" />
                 <span className="opacity-70">IP:</span>
-                <span className="font-medium truncate">{ip}</span>
+                <span className="truncate font-medium">{ip}</span>
               </div>
 
               <div className="flex items-center gap-2">
                 <FiClock className="opacity-80" />
                 <span className="opacity-70">Last seen:</span>
-                <span className="font-medium truncate">{lastSeenText}</span>
+                <span className="truncate font-medium">{lastSeenText}</span>
               </div>
             </div>
 
             <div className="mt-4 text-xs opacity-85">
-              UUID: <span className="font-mono break-all">{uuid}</span>
+              UUID: <span className="break-all font-mono">{uuid}</span>
             </div>
           </div>
 
           {/* RIGHT */}
-          <div className="flex flex-col items-end gap-2 shrink-0">
-            <span className={meta.badge}>
-              <StatusDot tone={meta.tone} pulsing={meta.pulsing} />
-              <span className="ml-2 inline-flex items-center gap-2">
-                <StatusIcon />
-                {meta.label}
+          <div className="shrink-0 flex flex-col items-end gap-2">
+            <span className={`${meta.badge} h-7 px-2.5 rounded-full`}>
+              <span className="inline-flex items-center gap-1.5 text-sm font-medium">
+                <StatusIndicator
+                  statusClass={meta.statusClass}
+                  pulsing={meta.pulsing}
+                />
+                <span className="inline-flex items-center gap-1.5">
+                  <StatusIcon className="size-3.5" />
+                  {meta.label}
+                </span>
               </span>
             </span>
 
-            <div className="text-xs opacity-70 text-right">{meta.hint}</div>
+            <div className="text-right text-xs opacity-70">{meta.hint}</div>
           </div>
         </div>
       </div>

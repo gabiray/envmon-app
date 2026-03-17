@@ -29,11 +29,6 @@ def _as_float(name: str) -> float | None:
 
 @missions_db_bp.get("/db/missions")
 def db_list_missions():
-    """
-    Lists missions imported in the local DB.
-    Optional query param:
-      - device_uuid: filter missions for a specific device
-    """
     device_uuid = (request.args.get("device_uuid") or "").strip() or None
 
     with SessionLocal() as db:
@@ -47,7 +42,10 @@ def db_list_missions():
             [
                 {
                     "mission_id": m.mission_id,
+                    "mission_name": m.mission_name or m.mission_id,
                     "device_uuid": m.device_uuid,
+                    "profile_type": m.profile_type,
+                    "profile_label": m.profile_label,
                     "created_at_epoch": m.created_at_epoch,
                     "started_at_epoch": m.started_at_epoch,
                     "ended_at_epoch": m.ended_at_epoch,

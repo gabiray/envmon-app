@@ -18,6 +18,7 @@ function getBadgeMeta(status) {
       ping: true,
     };
   }
+
   if (status === "out_of_range") {
     return {
       label: "Out of range",
@@ -27,6 +28,7 @@ function getBadgeMeta(status) {
       ping: false,
     };
   }
+
   return {
     label: "Inactive",
     tone: "neutral",
@@ -66,7 +68,6 @@ export default function MissionPanelInline({
   selectedStartPointId = null,
   onSelectStartPoint = () => {},
 
-  // Mission lifecycle
   missionRunning = false,
   busy = false,
   onStartMission = () => {},
@@ -78,7 +79,7 @@ export default function MissionPanelInline({
     [startPoints, selectedStartPointId]
   );
 
-  // Controlled fields (we must collect values for mission start)
+  const [missionName, setMissionName] = useState("");
   const [duration, setDuration] = useState(60);
   const [sampleHz, setSampleHz] = useState(2);
   const [photoEvery, setPhotoEvery] = useState(5);
@@ -87,20 +88,19 @@ export default function MissionPanelInline({
   const badge = useMemo(() => getBadgeMeta(deviceStatus), [deviceStatus]);
   const BadgeIcon = badge.Icon;
 
-  // Start requires: connected + a selected start point + not running + not busy
   const canStart =
     deviceStatus === "connected" && !!selected && !missionRunning && !busy;
 
-  // Stop/Abort requires: connected + running + not busy
   const canStopAbort =
     deviceStatus === "connected" && missionRunning && !busy;
 
-  // Disable param edits while mission is running or request in-flight
   const lockParams = busy || missionRunning;
 
   function handleStartClick() {
     if (!canStart) return;
+
     onStartMission({
+      mission_name: missionName.trim(),
       duration: Number(duration),
       sample_hz: Number(sampleHz),
       photo_every: Number(photoEvery),
@@ -129,6 +129,21 @@ export default function MissionPanelInline({
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4">
+          <label className="form-control sm:col-span-2">
+            <div className="label">
+              <span className="label-text text-xs opacity-70">Mission name</span>
+            </div>
+            <input
+              className="input input-sm input-bordered"
+              type="text"
+              maxLength={120}
+              placeholder="e.g. Parcel A - Morning Scan"
+              value={missionName}
+              onChange={(e) => setMissionName(e.target.value)}
+              disabled={lockParams}
+            />
+          </label>
+
           <label className="form-control">
             <div className="label">
               <span className="label-text text-xs opacity-70">Duration (s)</span>
@@ -195,6 +210,7 @@ export default function MissionPanelInline({
 
         <div className="mt-4 rounded-box border border-base-300 bg-base-200 p-4">
           <div className="text-sm font-semibold">Start point</div>
+
           {selected ? (
             <div className="mt-2">
               <div className="font-semibold">{selected.name}</div>
@@ -264,25 +280,22 @@ export default function MissionPanelInline({
             No points yet. Click on the map to add one.
           </div>
         ) : (
-          <div className="rounded-box border border-base-300 bg-base-200 overflow-hidden h-full">
-            <ul className="menu menu-sm overflow-y-auto max-h-full">
-              {startPoints.map((p) => (
-                <li key={p.id}>
-                  <button
-                    type="button"
-                    className={p.id === selectedStartPointId ? "active" : ""}
-                    onClick={() => onSelectStartPoint(p.id)}
-                    disabled={busy}
-                  >
-                    <span className="font-semibold">{p.name}</span>
-                    <span className="text-xs opacity-60 font-mono">
-                      {p.latlng.lat.toFixed(4)}, {p.latlng.lng.toFixed(4)}
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </div>
+          <ul className="menu menu-sm rounded-box border border-base-300 bg-base-100">
+            {startPoints.map((p) => (
+              <li key={p.id}>
+                <button
+                  type="button"
+                  className={p.id === selectedStartPointId ? "active" : ""}
+                  onClick={() => onSelectStartPoint(p.id)}
+                >
+                  <span className="font-medium">{p.name}</span>
+                  <span className="text-xs opacity-60 font-mono">
+                    {p.latlng.lat.toFixed(5)}, {p.latlng.lng.toFixed(5)}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
         )}
       </div>
     </div>

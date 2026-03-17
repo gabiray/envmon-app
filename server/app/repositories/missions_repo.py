@@ -13,7 +13,12 @@ class MissionsRepo:
             db.merge(mission)
             db.commit()
 
-    def replace_mission_points(self, mission_id: str, telemetry_points: list[TelemetryPoint], images: list[MissionImage]) -> None:
+    def replace_mission_points(
+        self,
+        mission_id: str,
+        telemetry_points: list[TelemetryPoint],
+        images: list[MissionImage],
+    ) -> None:
         with SessionLocal() as db:
             db.execute(delete(TelemetryPoint).where(TelemetryPoint.mission_id == mission_id))
             db.execute(delete(MissionImage).where(MissionImage.mission_id == mission_id))
@@ -37,15 +42,23 @@ class MissionsRepo:
     def _to_dict(self, m: Mission) -> dict:
         return {
             "mission_id": m.mission_id,
+            "mission_name": m.mission_name or m.mission_id,
             "device_uuid": m.device_uuid,
+            "profile_type": m.profile_type,
+            "profile_label": m.profile_label,
             "created_at_epoch": m.created_at_epoch,
             "started_at_epoch": m.started_at_epoch,
             "ended_at_epoch": m.ended_at_epoch,
             "status": m.status,
             "stop_reason": m.stop_reason,
             "location_mode": m.location_mode,
-            "start": {"lat": m.start_lat, "lon": m.start_lon, "alt_m": m.start_alt_m},
+            "start": {
+                "lat": m.start_lat,
+                "lon": m.start_lon,
+                "alt_m": m.start_alt_m,
+            },
             "has_gps": bool(m.has_gps),
             "has_images": bool(m.has_images),
             "imported_at_epoch": m.imported_at_epoch,
         }
+        

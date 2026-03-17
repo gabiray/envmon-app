@@ -1,20 +1,31 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useOutletContext } from "react-router-dom";
-import { FiMap, FiThermometer, FiGrid, FiList, FiChevronDown } from "react-icons/fi";
+import {
+  FiMap,
+  FiThermometer,
+  FiGrid,
+  FiList,
+  FiChevronDown,
+} from "react-icons/fi";
 
 import PageCard from "../components/PageCard";
 import HeatMapMap from "../components/heatmap/HeatMapMap";
-import { fetchDbMissions, fetchHeatGrid, fetchMissionTrack } from "../services/heatmapApi";
-import { fetchStartPoints } from "../services/envmon";
+import {
+  fetchDbMissions,
+  fetchHeatGrid,
+  fetchMissionTrack,
+} from "../services/heatmapApi";
+import { fetchStartPoints } from "../services/startPointsApi";
 
 function roundKey(lat, lon, decimals = 4) {
   return `${lat.toFixed(decimals)},${lon.toFixed(decimals)}`;
 }
 
 function distApproxMeters(aLat, aLon, bLat, bLon) {
-  // Simple equirectangular approximation (good for nearby points)
   const R = 6371000;
-  const x = ((bLon - aLon) * Math.PI) / 180 * Math.cos(((aLat + bLat) * Math.PI) / 360);
+  const x =
+    (((bLon - aLon) * Math.PI) / 180) *
+    Math.cos((((aLat + bLat) * Math.PI) / 180) / 2);
   const y = ((bLat - aLat) * Math.PI) / 180;
   return Math.sqrt(x * x + y * y) * R;
 }
@@ -42,7 +53,6 @@ export default function HeatMap() {
   const [track, setTrack] = useState([]);
   const [heat, setHeat] = useState(null);
 
-  // Load missions + start points for selected device
   useEffect(() => {
     let cancelled = false;
 
@@ -67,7 +77,10 @@ export default function HeatMap() {
       setMissions(list);
       setStartPoints(sp);
 
-      const withStart = list.filter((m) => m.start?.lat != null && m.start?.lon != null);
+      const withStart = list.filter(
+        (m) => m.start?.lat != null && m.start?.lon != null
+      );
+
       if (withStart.length > 0) {
         const first = withStart[0];
         setSelectedPinKey(roundKey(first.start.lat, first.start.lon, 4));
@@ -81,14 +94,15 @@ export default function HeatMap() {
     }
 
     load().catch(console.error);
+
     return () => {
       cancelled = true;
     };
   }, [selectedDeviceId]);
 
-  // Build pins grouped by mission start
   const pins = useMemo(() => {
     const map = new Map();
+
     for (const m of missions) {
       const lat = m.start?.lat;
       const lon = m.start?.lon;
@@ -96,6 +110,7 @@ export default function HeatMap() {
 
       const key = roundKey(lat, lon, 4);
       const existing = map.get(key);
+
       if (!existing) {
         map.set(key, {
           key,
@@ -110,7 +125,6 @@ export default function HeatMap() {
       }
     }
 
-    // Attach a friendly name based on nearest StartPoint (if any)
     const named = Array.from(map.values()).map((p) => {
       let best = null;
       let bestD = Infinity;
@@ -123,34 +137,33 @@ export default function HeatMap() {
         }
       }
 
-      // If nearest start point is within 80m, use its name
-      const name = best && bestD <= 80 ? best.name : null;
-
       return {
         ...p,
-        name: name || "Unnamed location",
-        nearest_m: Number.isFinite(bestD) ? Math.round(bestD) : null,
+        name: best ? best.name : `Start ${p.lat.toFixed(4)}, ${p.lon.toFixed(4)}`,
+        nearest_m: Number.isFinite(bestD) ? bestD : null,
       };
     });
 
     return named.sort((a, b) => b.count - a.count);
   }, [missions, startPoints]);
 
+  const selectedPin = useMemo(
+    () => pins.find((p) => p.key === selectedPinKey) || null,
+    [pins, selectedPinKey]
+  );
+
   const missionsForPin = useMemo(() => {
-    if (!selectedPinKey) return [];
-    const pin = pins.find((p) => p.key === selectedPinKey);
-    return pin ? pin.missions : [];
-  }, [pins, selectedPinKey]);
+    if (!selectedPin) return [];
+    return [...selectedPin.missions].sort(
+      (a, b) => (b.started_at_epoch || 0) - (a.started_at_epoch || 0)
+    );
+  }, [selectedPin]);
 
-  const selectedMission = useMemo(() => {
-    return missions.find((m) => m.mission_id === selectedMissionId) || null;
-  }, [missions, selectedMissionId]);
+  const selectedMission = useMemo(
+    () => missions.find((m) => m.mission_id === selectedMissionId) || null,
+    [missions, selectedMissionId]
+  );
 
-  const selectedPin = useMemo(() => {
-    return pins.find((p) => p.key === selectedPinKey) || null;
-  }, [pins, selectedPinKey]);
-
-  // Load track + heat grid when mission/metric/cell changes
   useEffect(() => {
     let cancelled = false;
 
@@ -163,7 +176,11 @@ export default function HeatMap() {
 
       const [t, h] = await Promise.all([
         fetchMissionTrack(selectedMissionId),
-        fetchHeatGrid({ mission_id: selectedMissionId, metric, cell_m: cellM }),
+        fetchHeatGrid({
+          mission_id: selectedMissionId,
+          metric,
+          cell_m: cellM,
+        }),
       ]);
 
       if (cancelled) return;
@@ -173,12 +190,12 @@ export default function HeatMap() {
     }
 
     loadMissionLayers().catch(console.error);
+
     return () => {
       cancelled = true;
     };
   }, [selectedMissionId, metric, cellM]);
 
-  // Custom dropdowns (no native checkmarks)
   const metricOptions = [
     { id: "temp_c", label: "Temperature (°C)" },
     { id: "hum_pct", label: "Humidity (%)" },
@@ -190,7 +207,6 @@ export default function HeatMap() {
 
   const right = (
     <div className="flex items-center gap-2">
-      {/* Metric dropdown */}
       <div className="dropdown dropdown-end">
         <button
           type="button"
@@ -222,7 +238,6 @@ export default function HeatMap() {
         </ul>
       </div>
 
-      {/* Cell size dropdown */}
       <div className="dropdown dropdown-end">
         <button
           type="button"
@@ -265,7 +280,6 @@ export default function HeatMap() {
         </div>
       ) : (
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-          {/* LEFT: pins + missions */}
           <div className="xl:col-span-1 space-y-4">
             <div className="rounded-box border border-base-300 bg-base-200 p-4">
               <div className="flex items-center justify-between">
@@ -307,7 +321,9 @@ export default function HeatMap() {
                   {selectedPin.nearest_m != null && (
                     <>
                       <span className="opacity-40"> • </span>
-                      <span>nearest saved point: {selectedPin.nearest_m} m</span>
+                      <span>
+                        nearest saved point: {selectedPin.nearest_m.toFixed(0)} m
+                      </span>
                     </>
                   )}
                 </div>
@@ -317,7 +333,7 @@ export default function HeatMap() {
             <div className="rounded-box border border-base-300 bg-base-200 p-4">
               <div className="flex items-center justify-between">
                 <div className="text-sm font-semibold inline-flex items-center gap-2">
-                  <FiList /> Missions at selected location
+                  <FiList /> Missions
                 </div>
                 <span className="badge badge-outline">{missionsForPin.length}</span>
               </div>
@@ -335,12 +351,24 @@ export default function HeatMap() {
                         className={m.mission_id === selectedMissionId ? "active" : ""}
                         onClick={() => setSelectedMissionId(m.mission_id)}
                       >
-                        <span className="font-mono text-xs break-all">
-                          {m.mission_id}
-                        </span>
-                        <span className={`badge badge-xs ${m.has_gps ? "badge-outline" : "badge-warning"}`}>
-                          {m.has_gps ? "gps" : "no gps"}
-                        </span>
+                        <div className="flex w-full items-start justify-between gap-3">
+                          <div className="min-w-0 text-left">
+                            <div className="font-semibold truncate">
+                              {m.mission_name || m.mission_id}
+                            </div>
+                            <div className="font-mono text-[11px] opacity-60 break-all mt-1">
+                              {m.mission_id}
+                            </div>
+                          </div>
+
+                          <span
+                            className={`badge badge-xs shrink-0 ${
+                              m.has_gps ? "badge-outline" : "badge-warning"
+                            }`}
+                          >
+                            {m.has_gps ? "gps" : "no gps"}
+                          </span>
+                        </div>
                       </button>
                     </li>
                   ))}
@@ -348,16 +376,27 @@ export default function HeatMap() {
               )}
 
               {selectedMission && (
-                <div className="mt-3 text-xs opacity-70">
-                  Status: <span className="font-medium">{selectedMission.status}</span>
-                  <span className="opacity-40"> • </span>
-                  Stop: <span className="font-medium">{selectedMission.stop_reason || "None"}</span>
+                <div className="mt-3 rounded-box border border-base-300 bg-base-100 p-3">
+                  <div className="font-semibold truncate">
+                    {selectedMission.mission_name || selectedMission.mission_id}
+                  </div>
+                  <div className="font-mono text-[11px] opacity-60 break-all mt-1">
+                    {selectedMission.mission_id}
+                  </div>
+
+                  <div className="mt-2 text-xs opacity-70">
+                    Status: <span className="font-medium">{selectedMission.status}</span>
+                    <span className="opacity-40"> • </span>
+                    Stop:{" "}
+                    <span className="font-medium">
+                      {selectedMission.stop_reason || "None"}
+                    </span>
+                  </div>
                 </div>
               )}
             </div>
           </div>
 
-          {/* RIGHT: map */}
           <div className="xl:col-span-2">
             <div className="rounded-box border border-base-300 overflow-hidden h-155 bg-base-200">
               <HeatMapMap
@@ -372,7 +411,6 @@ export default function HeatMap() {
                 selectedMission={selectedMission}
                 track={track}
                 heat={heat}
-                // show a small legend overlay
                 legend={{
                   metricLabel: metricLabel(metric),
                   min: heat?.value_min ?? null,

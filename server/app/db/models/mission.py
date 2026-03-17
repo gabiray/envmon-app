@@ -7,19 +7,24 @@ class Mission(Base):
     __tablename__ = "missions"
 
     mission_id = Column(String, primary_key=True, index=True)
+    mission_name = Column(String, nullable=True, index=True)
+
     device_uuid = Column(String, ForeignKey("devices.device_uuid"), nullable=False, index=True)
+
+    profile_type = Column(String, nullable=True, index=True)
+    profile_label = Column(String, nullable=True)
 
     created_at_epoch = Column(Integer, nullable=True)
     started_at_epoch = Column(Integer, nullable=True, index=True)
     ended_at_epoch = Column(Integer, nullable=True)
 
-    status = Column(String, nullable=False)        # COMPLETED/ABORTED/ERROR etc.
-    stop_reason = Column(String, nullable=True)    # STOP/ABORT/TIMER
+    status = Column(String, nullable=False)
+    stop_reason = Column(String, nullable=True)
 
-    profile_json = Column(Text, nullable=False)    # meta["profile"]
-    meta_json = Column(Text, nullable=False)       # meta full
+    profile_json = Column(Text, nullable=False)
+    meta_json = Column(Text, nullable=False)
 
-    location_mode = Column(String, nullable=True)  # gps|fixed|none
+    location_mode = Column(String, nullable=True)
     start_lat = Column(Float, nullable=True)
     start_lon = Column(Float, nullable=True)
     start_alt_m = Column(Float, nullable=True)
