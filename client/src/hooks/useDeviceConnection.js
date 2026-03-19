@@ -1,52 +1,57 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import api from "../services/api";
 
 export function useDeviceConnection(selectedDeviceId) {
   const [uiStatus, setUiStatus] = useState("inactive"); // inactive | connected | out_of_range
-  const [deviceState, setDeviceState] = useState(null); // response from /device/status
-  const lastRunningRef = useRef(false);
+  const [deviceState, setDeviceState] = useState(null);
+  const [missionRunning, setMissionRunning] = useState(false);
 
-  useEffect(() => {
-    let t = null;
-    let cancelled = false;
-
-    async function tick() {
-      // No device selected -> always inactive
-      if (!selectedDeviceId || selectedDeviceId === "none") {
-        lastRunningRef.current = false;
-        setUiStatus("inactive");
-        setDeviceState(null);
-        return;
-      }
-
-      try {
-        const { data } = await api.get("/device/status");
-        if (cancelled) return;
-
-        setDeviceState(data);
-
-        const runningNow =
-          Boolean(data?.running) || ["ARMING", "RUNNING"].includes(String(data?.state || ""));
-        lastRunningRef.current = runningNow;
-
-        setUiStatus("connected");
-      } catch (e) {
-        if (cancelled) return;
-
-        // If a mission was running and we lost connection -> out_of_range
-        setDeviceState(null);
-        setUiStatus(lastRunningRef.current ? "out_of_range" : "inactive");
-      }
+  const refreshStatus = useCallback(async () => {
+    if (!selectedDeviceId || selectedDeviceId === "none") {
+      setUiStatus("inactive");
+      setDeviceState(null);
+      setMissionRunning(false);
+      return null;
     }
 
-    tick();
-    t = setInterval(tick, 2000);
+    try {
+      const { data } = await api.get("/device/status");
+      setDeviceState(data);
 
-    return () => {
-      cancelled = true;
-      if (t) clearInterval(t);
-    };
-  }, [selectedDeviceId]);
+      const runningNow =
+        Boolean(data?.running) ||
+        ["ARMING", "RUNNING"].includes(String(data?.state || "").toUpperCase());
 
-  return { uiStatus, deviceState, missionRunning: lastRunningRef.current };
+      setMissionRunning(runningNow);
+      setUiStatus("connected");
+
+      return data;
+    } catch {
+      setDeviceState((prev) => prev);
+      setMissionRunning((prev) => prev);
+      setUiStatus((prevRunning) => (missionRunning ? "out_of_range" : "inactive"));
+      return null;
+    }
+  }, [selectedDeviceId, missionRunning]);
+
+  useEffect(() => {
+    refreshStatus();
+  }, [refreshStatus]);
+
+  useEffect(() => {
+    if (!selectedDeviceId || selectedDeviceId === "none") return;
+
+    const interval = window.setInterval(() => {
+      refreshStatus();
+    }, 3000);
+
+    return () => window.clearInterval(interval);
+  }, [selectedDeviceId, refreshStatus]);
+
+  return {
+    uiStatus,
+    deviceState,
+    missionRunning,
+    refreshStatus,
+  };
 }

@@ -26,6 +26,8 @@
 
   --color-neutral: #0f1420;                 /* sidebar bg */
   --color-neutral-content: rgba(255,255,255,.92);
+  --color-neutral-focus: #1a2234;           /* pentru hover pe elemente dark */
+  --color-neutral-content: rgba(255,255,255,.92);
 
   --color-info: #38bdf8;
   --color-info-content: #061018;
@@ -55,6 +57,17 @@
   --env-nav-active-border: rgba(255,255,255,.12);
 }
 
+/* Global styles */
 html {
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial;
+}
+
+/* Custom scrollbar styles */
+.custom-scrollbar {
+  -ms-overflow-style: none;  /* IE + Edge vechi */
+  scrollbar-width: none;     /* Firefox */
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  display: none;             /* Chrome, Safari, Edge nou */
 }

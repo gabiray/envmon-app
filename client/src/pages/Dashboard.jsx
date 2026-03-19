@@ -7,7 +7,11 @@ import MissionSyncPanel from "../components/dashboard/MissionSyncPanel";
 import MissionMapPanel from "../components/dashboard/MissionMapPanel";
 
 import { useDeviceConnection } from "../hooks/useDeviceConnection";
-import { createStartPoint, fetchStartPoints } from "../services/startPointsApi";
+import {
+  createStartPoint,
+  fetchStartPoints,
+  matchStartPointByCoords,
+} from "../services/startPointsApi";
 import {
   startMission,
   stopMission,
@@ -21,8 +25,7 @@ import {
 
 function ipFromBaseUrl(baseUrl) {
   try {
-    const u = new URL(baseUrl);
-    return u.hostname;
+    return new URL(baseUrl).hostname;
   } catch {
     return "None";
   }
@@ -30,71 +33,28 @@ function ipFromBaseUrl(baseUrl) {
 
 function buildDefaultMissionName(startPoint) {
   const now = new Date();
-
-  const datePart = now.toLocaleDateString("ro-RO", {
+  const dateStr = now.toLocaleDateString("ro-RO", {
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
   });
-
-  const timePart = now.toLocaleTimeString("ro-RO", {
+  const timeStr = now.toLocaleTimeString("ro-RO", {
     hour: "2-digit",
     minute: "2-digit",
   });
 
-  if (startPoint?.name) {
-    return `${startPoint.name} - ${datePart} ${timePart}`;
-  }
-
-  return `Mission ${datePart} ${timePart}`;
-}
-
-function normalizeMissionRows(deviceMissionIds, dbMissions, activeDevice) {
-  const dbMap = new Map(
-    (dbMissions || []).map((mission) => [mission.mission_id, mission])
-  );
-
-  return (deviceMissionIds || []).map((missionId) => {
-    const dbMission = dbMap.get(missionId);
-
-    return {
-      mission_id: missionId,
-      mission_name: dbMission?.mission_name || missionId,
-      started_at_epoch:
-        dbMission?.started_at_epoch ??
-        dbMission?.created_at_epoch ??
-        null,
-      profile_type:
-        dbMission?.profile_type || activeDevice?.active_profile_type || null,
-      profile_label:
-        dbMission?.profile_label || activeDevice?.active_profile_label || null,
-      has_gps: Boolean(dbMission?.has_gps),
-      has_images: Boolean(dbMission?.has_images),
-      imported: Boolean(dbMission),
-    };
-  });
-}
-
-function filterMissionRows(rows, search) {
-  const q = search.trim().toLowerCase();
-
-  if (!q) return rows;
-
-  return rows.filter((mission) => {
-    const missionName = String(mission.mission_name || "").toLowerCase();
-    const missionId = String(mission.mission_id || "").toLowerCase();
-
-    return missionName.includes(q) || missionId.includes(q);
-  });
+  return startPoint?.name
+    ? `${startPoint.name} - ${dateStr} ${timeStr}`
+    : `Mission ${dateStr} ${timeStr}`;
 }
 
 export default function Dashboard() {
   const { selectedDeviceId, activeDevice } = useOutletContext();
-
   const {
     uiStatus: deviceStatus,
     deviceState,
     missionRunning,
+    refreshStatus,
   } = useDeviceConnection(selectedDeviceId);
 
   const [startPoints, setStartPoints] = useState([]);
@@ -102,7 +62,7 @@ export default function Dashboard() {
 
   const [busy, setBusy] = useState(false);
   const [busyStatus, setBusyStatus] = useState(false);
-  const [liveStreamEnabled, setLiveStreamEnabled] = useState(false);
+  const [statusExpandSignal, setStatusExpandSignal] = useState(0);
 
   const [deviceMissionsData, setDeviceMissionsData] = useState({
     missions: [],
@@ -114,56 +74,46 @@ export default function Dashboard() {
   const [missionSearch, setMissionSearch] = useState("");
   const [selectedMissionIds, setSelectedMissionIds] = useState([]);
 
-  const metrics = {
-    temperature: { value: 25.2, unit: "°C" },
-    humidity: { value: 49.7, unit: "%" },
-    pressure: { value: 979.6, unit: "hPa" },
-    gas: { value: 24.3, unit: "kΩ" },
-  };
+  const selectedStartPoint = useMemo(
+    () => startPoints.find((p) => p.id === selectedStartPointId) || null,
+    [startPoints, selectedStartPointId],
+  );
 
   useEffect(() => {
     let cancelled = false;
 
-    async function loadStartPoints() {
+    const loadStartPoints = async () => {
       if (!selectedDeviceId || selectedDeviceId === "none") {
         setStartPoints([]);
         setSelectedStartPointId(null);
         return;
       }
 
-      const items = await fetchStartPoints(selectedDeviceId);
-      if (cancelled) return;
+      try {
+        const items = await fetchStartPoints(selectedDeviceId);
+        if (cancelled) return;
 
-      setStartPoints(items);
-
-      if (items.length === 0) {
-        setSelectedStartPointId(null);
-        return;
+        setStartPoints(items);
+        setSelectedStartPointId((prev) => {
+          if (prev && items.some((item) => item.id === prev)) return prev;
+          return items.length > 0 ? items[0].id : null;
+        });
+      } catch (err) {
+        console.error("Failed to load start points", err);
       }
+    };
 
-      setSelectedStartPointId((prev) => {
-        const stillExists = items.some((item) => item.id === prev);
-        return stillExists ? prev : items[0].id;
-      });
-    }
-
-    loadStartPoints().catch(console.error);
+    loadStartPoints();
 
     return () => {
       cancelled = true;
     };
   }, [selectedDeviceId]);
 
-  async function refreshMissionSync() {
-    if (!selectedDeviceId || selectedDeviceId === "none") {
-      setDeviceMissionsData({ missions: [], incomplete_missions: [] });
-      setDbMissions([]);
-      setSelectedMissionIds([]);
-      return;
-    }
+  const refreshMissionSync = async () => {
+    if (!selectedDeviceId || selectedDeviceId === "none") return;
 
     setMissionsLoading(true);
-
     try {
       const [deviceRes, dbRes] = await Promise.all([
         getDeviceMissions(),
@@ -171,240 +121,277 @@ export default function Dashboard() {
       ]);
 
       setDeviceMissionsData({
-        missions: Array.isArray(deviceRes?.missions) ? deviceRes.missions : [],
-        incomplete_missions: Array.isArray(deviceRes?.incomplete_missions)
-          ? deviceRes.incomplete_missions
-          : [],
+        missions: deviceRes?.missions || [],
+        incomplete_missions: deviceRes?.incomplete_missions || [],
       });
 
       setDbMissions(Array.isArray(dbRes) ? dbRes : []);
     } catch (error) {
-      console.error("Failed to refresh mission sync panel:", error);
-      setDeviceMissionsData({ missions: [], incomplete_missions: [] });
-      setDbMissions([]);
+      console.error("Failed to refresh missions", error);
     } finally {
       setMissionsLoading(false);
     }
-  }
+  };
 
   useEffect(() => {
-    refreshMissionSync().catch(console.error);
+    refreshMissionSync();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedDeviceId]);
 
   const missionRows = useMemo(() => {
-    return normalizeMissionRows(
-      deviceMissionsData.missions,
-      dbMissions,
-      activeDevice
-    );
+    const dbMap = new Map((dbMissions || []).map((m) => [m.mission_id, m]));
+
+    return (deviceMissionsData.missions || []).map((missionId) => {
+      const dbMission = dbMap.get(missionId);
+
+      return {
+        mission_id: missionId,
+        mission_name: dbMission?.mission_name || missionId,
+        started_at_epoch: dbMission?.started_at_epoch ?? null,
+        profile_type:
+          dbMission?.profile_type || activeDevice?.active_profile_type,
+        has_gps: Boolean(dbMission?.has_gps),
+        has_images: Boolean(dbMission?.has_images),
+        imported: Boolean(dbMission),
+      };
+    });
   }, [deviceMissionsData.missions, dbMissions, activeDevice]);
 
   const filteredMissionRows = useMemo(() => {
-    return filterMissionRows(missionRows, missionSearch);
+    const q = missionSearch.trim().toLowerCase();
+    if (!q) return missionRows;
+
+    return missionRows.filter(
+      (m) =>
+        String(m.mission_name).toLowerCase().includes(q) ||
+        String(m.mission_id).toLowerCase().includes(q),
+    );
   }, [missionRows, missionSearch]);
 
-  useEffect(() => {
-    const validIds = new Set(missionRows.map((mission) => mission.mission_id));
+  const handleAction = async (actionFn, ...args) => {
+    setBusy(true);
+    try {
+      await actionFn(...args);
+      await refreshMissionSync();
+      await refreshStatus();
+    } finally {
+      setBusy(false);
+    }
+  };
 
-    setSelectedMissionIds((prev) => prev.filter((id) => validIds.has(id)));
-  }, [missionRows]);
-
-  async function handleAddStartPoint({ name, latlng }) {
-    if (!selectedDeviceId || selectedDeviceId === "none") return null;
-
-    const created = await createStartPoint({
-      device_uuid: selectedDeviceId,
-      name,
-      latlng,
-    });
-
-    setStartPoints((prev) => [created, ...prev]);
-
-    if (!selectedStartPointId && created?.id) {
-      setSelectedStartPointId(created.id);
+  const handleAddStartPoint = async ({
+    name,
+    latlng,
+    alt_m = null,
+    source = "manual",
+    tags = [],
+  }) => {
+    if (!selectedDeviceId || selectedDeviceId === "none") {
+      console.error("Cannot create start point without an active device.");
+      return null;
     }
 
-    return created;
-  }
+    try {
+      const created = await createStartPoint({
+        device_uuid: selectedDeviceId,
+        name,
+        latlng,
+        alt_m,
+        source,
+        tags,
+      });
 
-  async function handleStartMission(profile) {
-    if (deviceStatus !== "connected") return;
+      setStartPoints((prev) => [created, ...prev]);
+      setSelectedStartPointId(created.id);
 
-    const sp = startPoints.find((point) => point.id === selectedStartPointId) || null;
+      return created;
+    } catch (error) {
+      console.error("Failed to create start point", error);
+      return null;
+    }
+  };
 
-    const fixed_location = sp
-      ? {
-          lat: sp.latlng.lat,
-          lon: sp.latlng.lng,
-          alt_m: sp.alt_m ?? null,
-        }
-      : {
-          lat: null,
-          lon: null,
-          alt_m: null,
-        };
+  const handleImportNew = async () => {
+    setMissionsImporting(true);
+    try {
+      await importNewMissions();
+      await refreshMissionSync();
+      setSelectedMissionIds([]);
+    } catch (error) {
+      console.error("Failed to import missions", error);
+    } finally {
+      setMissionsImporting(false);
+    }
+  };
 
-    const mission_name =
-      (profile.mission_name || "").trim() || buildDefaultMissionName(sp);
+  const handleStartMission = async (formPayload) => {
+    if (!selectedDeviceId || selectedDeviceId === "none") {
+      return { ok: false, error: "Select a device first." };
+    }
 
     setBusy(true);
 
     try {
+      const basePayload = {
+        mission_name:
+          String(formPayload?.mission_name || "").trim() ||
+          buildDefaultMissionName(selectedStartPoint),
+        duration: Number(formPayload?.duration ?? 60),
+        sample_hz: Number(formPayload?.sample_hz ?? 2),
+        photo_every: Number(formPayload?.photo_every ?? 5),
+        gps_mode: String(formPayload?.gps_mode || "best_effort"),
+        camera_mode: String(formPayload?.camera_mode || "on"),
+        location_mode: String(formPayload?.location_mode || "fixed"),
+      };
+
+      if (basePayload.location_mode === "fixed") {
+        if (!selectedStartPoint) {
+          return { ok: false, error: "Choose a fixed location first." };
+        }
+
+        await startMission({
+          ...basePayload,
+          location_mode: "fixed",
+          fixed_location: {
+            lat: selectedStartPoint.latlng.lat,
+            lon: selectedStartPoint.latlng.lng,
+            alt_m: selectedStartPoint.alt_m ?? null,
+          },
+        });
+
+        await refreshMissionSync();
+        await refreshStatus();
+        return { ok: true };
+      }
+
+      const status = await refreshStatus();
+      const fix = status?.gps?.last_good_fix || null;
+      const hasFix =
+        Boolean(status?.gps?.has_fix) && fix?.lat != null && fix?.lon != null;
+
+      if (!hasFix) {
+        return {
+          ok: false,
+          error:
+            "GPS fix is not available yet. Check status, wait for a valid fix, then try again.",
+        };
+      }
+
+      const match = await matchStartPointByCoords({
+        device_uuid: selectedDeviceId,
+        lat: fix.lat,
+        lon: fix.lon,
+        radius_m: 20,
+      });
+
+      let resolvedLocation = match?.item || null;
+
+      if (!resolvedLocation) {
+        const gpsLocationName = String(
+          formPayload?.gps_location_name || "",
+        ).trim();
+
+        if (!gpsLocationName) {
+          return {
+            ok: false,
+            needsGpsLocationName: true,
+            coords: {
+              lat: fix.lat,
+              lng: fix.lon,
+              alt_m: fix.alt_m ?? null,
+            },
+          };
+        }
+
+        resolvedLocation = await handleAddStartPoint({
+          name: gpsLocationName,
+          latlng: { lat: fix.lat, lng: fix.lon },
+          alt_m: fix.alt_m ?? null,
+          source: "gps",
+          tags: ["gps"],
+        });
+      } else {
+        setSelectedStartPointId(resolvedLocation.id);
+      }
+
       await startMission({
-        mission_name,
-        duration: profile.duration,
-        sample_hz: profile.sample_hz,
-        photo_every: profile.photo_every,
-        gps_mode: profile.gps_mode,
-        camera_mode: "on",
-        location_mode: sp ? "fixed" : "gps",
-        fixed_location,
+        ...basePayload,
+        location_mode: "gps",
       });
 
       await refreshMissionSync();
-    } finally {
-      setBusy(false);
-    }
-  }
+      await refreshStatus();
 
-  async function handleStopMission() {
-    setBusy(true);
-
-    try {
-      await stopMission();
-      await refreshMissionSync();
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function handleAbortMission() {
-    setBusy(true);
-
-    try {
-      await abortMission();
-      await refreshMissionSync();
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function handleRefreshStatus() {
-    setBusyStatus(true);
-
-    try {
-      await new Promise((resolve) => setTimeout(resolve, 350));
-    } finally {
-      setBusyStatus(false);
-    }
-  }
-
-  function handleToggleLiveStream() {
-    setLiveStreamEnabled((prev) => !prev);
-  }
-
-  function handleToggleMission(missionId) {
-    setSelectedMissionIds((prev) =>
-      prev.includes(missionId)
-        ? prev.filter((id) => id !== missionId)
-        : [...prev, missionId]
-    );
-  }
-
-  function handleToggleSelectAllVisible() {
-    const visibleSelectableIds = filteredMissionRows
-      .filter((mission) => !mission.imported)
-      .map((mission) => mission.mission_id);
-
-    const allVisibleSelected =
-      visibleSelectableIds.length > 0 &&
-      visibleSelectableIds.every((id) => selectedMissionIds.includes(id));
-
-    setSelectedMissionIds((prev) => {
-      if (allVisibleSelected) {
-        return prev.filter((id) => !visibleSelectableIds.includes(id));
-      }
-
-      return [...new Set([...prev, ...visibleSelectableIds])];
-    });
-  }
-
-  async function handleImportSelected() {
-    if (selectedMissionIds.length === 0) return;
-
-    setMissionsImporting(true);
-
-    try {
-      await importNewMissions();
-      await refreshMissionSync();
-      setSelectedMissionIds([]);
+      return {
+        ok: true,
+        matchedLocation: resolvedLocation,
+      };
     } catch (error) {
-      console.error("Failed to import selected missions:", error);
+      return {
+        ok: false,
+        error:
+          error?.response?.data?.error ||
+          error?.message ||
+          "Mission could not be started.",
+      };
     } finally {
-      setMissionsImporting(false);
+      setBusy(false);
     }
-  }
+  };
 
-  async function handleImportNew() {
-    setMissionsImporting(true);
-
-    try {
-      await importNewMissions();
-      await refreshMissionSync();
-      setSelectedMissionIds([]);
-    } catch (error) {
-      console.error("Failed to import new missions:", error);
-    } finally {
-      setMissionsImporting(false);
-    }
-  }
-
-  const heroDevice = useMemo(() => {
-    const baseUrl = activeDevice?.base_url || "";
-
-    return {
+  const heroDevice = useMemo(
+    () => ({
       nickname:
         activeDevice?.nickname ||
         (selectedDeviceId === "none" ? "None" : "No device selected"),
       hostname:
         activeDevice?.hostname || activeDevice?.info?.hostname || "None",
-      uuid:
-        activeDevice?.device_uuid ||
-        (selectedDeviceId === "none" ? "None" : selectedDeviceId),
-      ip: ipFromBaseUrl(baseUrl),
+      uuid: activeDevice?.device_uuid || selectedDeviceId,
+      ip: ipFromBaseUrl(activeDevice?.base_url),
       lastSeenText: activeDevice?.last_seen_epoch ? "Recent" : "None",
-    };
-  }, [activeDevice, selectedDeviceId]);
+    }),
+    [activeDevice, selectedDeviceId],
+  );
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-6">
       <DeviceHeroBanner status={deviceStatus} device={heroDevice} />
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-12 xl:items-start">
-        <div className="xl:col-span-5">
+        <div className="xl:col-span-6">
           <DeviceStatusPanel
             activeDevice={activeDevice}
             deviceStatus={deviceStatus}
             deviceState={deviceState}
-            liveMetrics={metrics}
-            liveStreamEnabled={liveStreamEnabled}
-            onToggleLiveStream={handleToggleLiveStream}
-            onCheckStatus={handleRefreshStatus}
+            onCheckStatus={async () => {
+              setBusyStatus(true);
+              try {
+                const data = await refreshStatus();
+                if (data) setStatusExpandSignal((prev) => prev + 1);
+              } finally {
+                setBusyStatus(false);
+              }
+            }}
             checking={busyStatus}
-            defaultExpanded={false}
+            expandSignal={statusExpandSignal}
           />
         </div>
 
-        <div className="xl:col-span-7">
+        <div className="xl:col-span-6">
           <MissionSyncPanel
-            missions={missionRows}
+            missions={filteredMissionRows}
             selectedMissionIds={selectedMissionIds}
             search={missionSearch}
             onSearchChange={setMissionSearch}
-            onToggleMission={handleToggleMission}
-            onToggleSelectAllVisible={handleToggleSelectAllVisible}
+            onToggleMission={(id) =>
+              setSelectedMissionIds((prev) =>
+                prev.includes(id)
+                  ? prev.filter((item) => item !== id)
+                  : [...prev, id],
+              )
+            }
             onRefresh={refreshMissionSync}
-            onImportSelected={handleImportSelected}
+            onImportSelected={handleImportNew}
             onImportNew={handleImportNew}
             loading={missionsLoading}
             importing={missionsImporting}
@@ -415,15 +402,15 @@ export default function Dashboard() {
 
       <MissionMapPanel
         deviceStatus={deviceStatus}
+        deviceState={deviceState}
         startPoints={startPoints}
         selectedStartPointId={selectedStartPointId}
         onAddStartPoint={handleAddStartPoint}
         onSelectStartPoint={setSelectedStartPointId}
-        metrics={metrics}
-        missionRunning={Boolean(deviceState?.running) || missionRunning}
+        missionRunning={missionRunning}
         onStartMission={handleStartMission}
-        onStopMission={handleStopMission}
-        onAbortMission={handleAbortMission}
+        onStopMission={() => handleAction(stopMission)}
+        onAbortMission={() => handleAction(abortMission)}
         busy={busy}
       />
     </div>

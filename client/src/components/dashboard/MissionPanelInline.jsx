@@ -1,303 +1,372 @@
 import React, { useMemo, useState } from "react";
 import {
+  FiAlertTriangle,
+  FiCamera,
+  FiChevronDown,
+  FiClock,
+  FiMapPin,
+  FiNavigation,
   FiPlay,
   FiSquare,
   FiXOctagon,
-  FiRadio,
-  FiAlertTriangle,
-  FiSlash,
 } from "react-icons/fi";
 
-function getBadgeMeta(status) {
-  if (status === "connected") {
+// Păstrăm funcțiile tale originale [cite: 93, 102]
+function getRuntimeMeta(runtimeState) {
+  const state = String(runtimeState || "").trim().toUpperCase();
+
+  if (!state) {
     return {
-      label: "Connected",
-      tone: "success",
-      cls: "badge badge-outline border-success/40 text-success bg-success/5",
-      Icon: FiRadio,
-      ping: true,
+      label: "Unknown",
+      cls: "badge badge-outline border-base-300 bg-base-200 text-base-content/70",
+      statusClass: "status status-neutral",
+      pulsing: false,
     };
   }
 
-  if (status === "out_of_range") {
+  if (state === "IDLE" || state === "COMPLETED") {
     return {
-      label: "Out of range",
-      tone: "warning",
-      cls: "badge badge-outline border-warning/40 text-warning bg-warning/5",
-      Icon: FiAlertTriangle,
-      ping: false,
+      label: state === "COMPLETED" ? "Completed" : "Idle",
+      cls: "badge badge-outline border-success/35 bg-success/10 text-success",
+      statusClass: "status status-success",
+      pulsing: false,
+    };
+  }
+
+  if (state === "RUNNING") {
+    return {
+      label: "Running",
+      cls: "badge badge-outline border-success/35 bg-success/10 text-success",
+      statusClass: "status status-success",
+      pulsing: true,
+    };
+  }
+
+  if (state === "ARMING") {
+    return {
+      label: "Arming",
+      cls: "badge badge-outline border-warning/35 bg-warning/10 text-warning",
+      statusClass: "status status-warning",
+      pulsing: true,
+    };
+  }
+
+  if (state === "ABORTED" || state === "ERROR") {
+    return {
+      label: state === "ABORTED" ? "Aborted" : "Error",
+      cls: "badge badge-outline border-error/35 bg-error/10 text-error",
+      statusClass: "status status-error",
+      pulsing: false,
     };
   }
 
   return {
-    label: "Inactive",
-    tone: "neutral",
-    cls: "badge badge-outline border-neutral-content/20 text-neutral-content/80",
-    Icon: FiSlash,
-    ping: false,
+    label: "Unknown",
+    cls: "badge badge-outline border-base-300 bg-base-200 text-base-content/70",
+    statusClass: "status status-neutral",
+    pulsing: false,
   };
 }
 
-function StatusDot({ tone = "neutral", ping = false }) {
-  const color =
-    tone === "success"
-      ? "bg-success"
-      : tone === "warning"
-      ? "bg-warning"
-      : "bg-neutral-content/60";
+function buildDefaultMissionName(startPoint) {
+  const now = new Date();
+  const dateStr = now.toLocaleDateString("ro-RO", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const timeStr = now.toLocaleTimeString("ro-RO", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  return startPoint?.name
+    ? `${startPoint.name} - ${dateStr} ${timeStr}`
+    : `Mission ${dateStr} ${timeStr}`;
+}
 
+// STILUL TĂU ORIGINAL PENTRU ETICHETE (Uppercase, mic) [cite: 105]
+function SectionLabel({ children }) {
   return (
-    <span className="relative inline-flex h-2.5 w-2.5">
-      {ping && (
-        <span
-          className={`absolute inline-flex h-full w-full rounded-full ${color} opacity-60 animate-ping`}
-          aria-hidden="true"
-        />
-      )}
-      <span
-        className={`relative inline-flex h-2.5 w-2.5 rounded-full ${color}`}
-        aria-hidden="true"
+    <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-base-content/45">
+      {children}
+    </div>
+  );
+}
+
+// AM REVENIT LA INPUT-SM [cite: 106]
+function NumberField({ label, value, onChange, min, step = "1", disabled = false }) {
+  return (
+    <label className="form-control w-full">
+      <SectionLabel>{label}</SectionLabel>
+      <input
+        className="input input-bordered w-full rounded-xl"
+        type="number"
+        min={min}
+        step={step}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={disabled}
       />
-    </span>
+    </label>
+  );
+}
+
+// AM REVENIT LA SELECT-SM [cite: 108]
+function SelectField({ label, value, onChange, options, disabled = false }) {
+  return (
+    <label className="form-control w-full">
+      <SectionLabel>{label}</SectionLabel>
+      <select
+        className="select select-bordered w-full rounded-xl"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={disabled}
+      >
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }
 
 export default function MissionPanelInline({
+  runtimeState = null,
   deviceStatus = "inactive",
-  startPoints = [],
-  selectedStartPointId = null,
-  onSelectStartPoint = () => {},
-
+  deviceState = null,
+  locationMode = "gps",
+  selectedStartPoint = null,
   missionRunning = false,
   busy = false,
-  onStartMission = () => {},
+  onOpenLocationPicker = () => {},
+  onRequestGpsLocationName = () => {},
+  onStartMission = async () => ({ ok: false }),
   onStopMission = () => {},
   onAbortMission = () => {},
 }) {
-  const selected = useMemo(
-    () => startPoints.find((p) => p.id === selectedStartPointId) || null,
-    [startPoints, selectedStartPointId]
-  );
-
   const [missionName, setMissionName] = useState("");
   const [duration, setDuration] = useState(60);
+  const [cameraMode, setCameraMode] = useState("on");
+  const [gpsMode, setGpsMode] = useState("best_effort");
   const [sampleHz, setSampleHz] = useState(2);
   const [photoEvery, setPhotoEvery] = useState(5);
-  const [gpsMode, setGpsMode] = useState("best_effort");
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [errorText, setErrorText] = useState("");
 
-  const badge = useMemo(() => getBadgeMeta(deviceStatus), [deviceStatus]);
-  const BadgeIcon = badge.Icon;
+  const runtimeBadge = useMemo(() => getRuntimeMeta(runtimeState), [runtimeState]);
 
   const canStart =
-    deviceStatus === "connected" && !!selected && !missionRunning && !busy;
+    deviceStatus === "connected" &&
+    !busy &&
+    !missionRunning &&
+    (locationMode === "gps" || Boolean(selectedStartPoint));
 
-  const canStopAbort =
-    deviceStatus === "connected" && missionRunning && !busy;
+  const activeProfile = deviceState?.profile || null;
+  const activeLocationMode = activeProfile?.location_mode || locationMode || "gps";
 
-  const lockParams = busy || missionRunning;
+  async function handleStartClick() {
+    setErrorText("");
 
-  function handleStartClick() {
-    if (!canStart) return;
-
-    onStartMission({
-      mission_name: missionName.trim(),
+    const payload = {
+      mission_name: missionName.trim() || buildDefaultMissionName(selectedStartPoint),
       duration: Number(duration),
+      camera_mode: cameraMode,
+      gps_mode: gpsMode,
       sample_hz: Number(sampleHz),
       photo_every: Number(photoEvery),
-      gps_mode: gpsMode,
-    });
+      location_mode: locationMode,
+    };
+
+    const result = await onStartMission(payload);
+
+    if (result?.ok) return;
+
+    if (result?.needsGpsLocationName) {
+      onRequestGpsLocationName({ coords: result.coords || null, payload });
+      return;
+    }
+
+    setErrorText(result?.error || "Mission could not be started.");
   }
 
   return (
-    <div className="h-full flex flex-col">
-      <div>
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <div className="text-sm font-semibold">Mission control</div>
-            <div className="text-xs opacity-60">
-              Set params and select a start point
-            </div>
+    <div className="flex h-full flex-col p-5">
+      <div className="flex items-start justify-between gap-3 border-b border-base-300 pb-4">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <FiNavigation className="text-primary" />
+            <div className="text-base font-semibold text-base-content">Mission control</div>
           </div>
+          <div className="mt-1 text-sm text-base-content/60">
+            Configure mission parameters and location source.
+          </div>
+        </div>
 
-          <div className={badge.cls}>
-            <StatusDot tone={badge.tone} ping={badge.ping} />
-            <span className="ml-2 inline-flex items-center gap-2">
-              <BadgeIcon />
-              {badge.label}
+        <div className={runtimeBadge.cls}>
+          <span className="inline-flex items-center gap-2">
+            <span className="inline-grid shrink-0 *:[grid-area:1/1]">
+              {runtimeBadge.pulsing ? (
+                <div className={`${runtimeBadge.statusClass} animate-ping`} aria-hidden="true" />
+              ) : null}
+              <div className={runtimeBadge.statusClass} aria-hidden="true" />
             </span>
-          </div>
+            {runtimeBadge.label}
+          </span>
         </div>
+      </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4">
-          <label className="form-control sm:col-span-2">
-            <div className="label">
-              <span className="label-text text-xs opacity-70">Mission name</span>
+      {!missionRunning ? (
+        <>
+          <div className="mt-5 grid grid-cols-1 gap-4">
+            <label className="form-control w-full">
+              <SectionLabel>Mission name</SectionLabel>
+              <input
+                className="input input-bordered w-full rounded-xl"
+                type="text"
+                maxLength={120}
+                value={missionName}
+                onChange={(e) => setMissionName(e.target.value)}
+                placeholder="e.g. Parcel A - Morning Scan"
+                disabled={busy}
+              />
+            </label>
+
+            <NumberField label="Duration (s)" value={duration} onChange={setDuration} min={1} disabled={busy} />
+
+            <div className="grid grid-cols-2 gap-4">
+              <SelectField
+                label="Photo mode"
+                value={cameraMode}
+                onChange={setCameraMode}
+                disabled={busy}
+                options={[
+                  { value: "on", label: "On" },
+                  { value: "off", label: "Off" },
+                ]}
+              />
+
+              <SelectField
+                label="GPS mode"
+                value={gpsMode}
+                onChange={setGpsMode}
+                disabled={busy}
+                options={[
+                  { value: "off", label: "Off" },
+                  { value: "best_effort", label: "Best effort" },
+                  { value: "required", label: "Required" },
+                ]}
+              />
             </div>
-            <input
-              className="input input-sm input-bordered"
-              type="text"
-              maxLength={120}
-              placeholder="e.g. Parcel A - Morning Scan"
-              value={missionName}
-              onChange={(e) => setMissionName(e.target.value)}
-              disabled={lockParams}
-            />
-          </label>
 
-          <label className="form-control">
-            <div className="label">
-              <span className="label-text text-xs opacity-70">Duration (s)</span>
+            <div className="overflow-hidden rounded-2xl border border-base-300 bg-base-100">
+              <button
+                type="button"
+                className="flex w-full items-center justify-between px-4 py-3 text-left"
+                onClick={() => setAdvancedOpen((prev) => !prev)}
+                disabled={busy}
+              >
+                <div>
+                  <div className="text-sm font-semibold text-base-content">Advanced settings</div>
+                  <div className="text-xs text-base-content/55">Sampling and capture frequency</div>
+                </div>
+                <FiChevronDown className={`text-base-content/50 transition-transform duration-200 ${advancedOpen ? "rotate-180" : ""}`} />
+              </button>
+
+              {advancedOpen && (
+                <div className="grid grid-cols-2 gap-4 border-t border-base-300 px-4 py-4">
+                  <NumberField label="Sample rate (Hz)" value={sampleHz} onChange={setSampleHz} min={0.1} step="0.1" disabled={busy} />
+                  <NumberField label="Photos every (s)" value={photoEvery} onChange={setPhotoEvery} min={0} step="1" disabled={busy} />
+                </div>
+              )}
             </div>
-            <input
-              className="input input-sm input-bordered"
-              type="number"
-              min={1}
-              value={duration}
-              onChange={(e) => setDuration(e.target.value)}
-              disabled={lockParams}
-            />
-          </label>
 
-          <label className="form-control">
-            <div className="label">
-              <span className="label-text text-xs opacity-70">
-                Sample rate (Hz)
-              </span>
-            </div>
-            <input
-              className="input input-sm input-bordered"
-              type="number"
-              step="0.1"
-              min={0.1}
-              value={sampleHz}
-              onChange={(e) => setSampleHz(e.target.value)}
-              disabled={lockParams}
-            />
-          </label>
-
-          <label className="form-control">
-            <div className="label">
-              <span className="label-text text-xs opacity-70">
-                Photos every (s)
-              </span>
-            </div>
-            <input
-              className="input input-sm input-bordered"
-              type="number"
-              min={0}
-              value={photoEvery}
-              onChange={(e) => setPhotoEvery(e.target.value)}
-              disabled={lockParams}
-            />
-          </label>
-
-          <label className="form-control">
-            <div className="label">
-              <span className="label-text text-xs opacity-70">GPS mode</span>
-            </div>
-            <select
-              className="select select-sm select-bordered"
-              value={gpsMode}
-              onChange={(e) => setGpsMode(e.target.value)}
-              disabled={lockParams}
-            >
-              <option value="off">off</option>
-              <option value="best_effort">best_effort</option>
-              <option value="required">required</option>
-            </select>
-          </label>
-        </div>
-
-        <div className="mt-4 rounded-box border border-base-300 bg-base-200 p-4">
-          <div className="text-sm font-semibold">Start point</div>
-
-          {selected ? (
-            <div className="mt-2">
-              <div className="font-semibold">{selected.name}</div>
-              <div className="text-xs opacity-60 font-mono mt-1">
-                {selected.latlng.lat.toFixed(6)}, {selected.latlng.lng.toFixed(6)}
+            <div>
+              <SectionLabel>Location</SectionLabel>
+              <div className="rounded-2xl border border-base-300 bg-base-200/60 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 text-sm font-semibold">
+                      <FiMapPin className="text-primary" />
+                      {locationMode === "gps" ? "GPS live location" : selectedStartPoint?.name || "Fixed location"}
+                    </div>
+                    <div className="mt-2 text-sm text-base-content/65">
+                      {locationMode === "gps"
+                        ? "Mission start will validate the live GPS fix and reuse a saved place if one exists nearby."
+                        : selectedStartPoint
+                        ? `${selectedStartPoint.latlng.lat.toFixed(6)}, ${selectedStartPoint.latlng.lng.toFixed(6)}`
+                        : "Choose a saved location or create a new one from the map."}
+                    </div>
+                  </div>
+                  
+                  <button className="btn btn-sm rounded-xl border-base-300 bg-base-100" onClick={onOpenLocationPicker} disabled={busy}>
+                    Change
+                  </button>
+                </div>
               </div>
             </div>
-          ) : (
-            <div className="text-sm opacity-60 mt-2">
-              Click on the map to create/select a start point.
-            </div>
-          )}
-        </div>
-
-        <div className="grid grid-cols-3 gap-2 mt-4">
-          <button
-            className="btn btn-sm btn-primary"
-            disabled={!canStart}
-            onClick={handleStartClick}
-          >
-            {busy ? (
-              <span className="loading loading-spinner loading-xs" />
-            ) : (
-              <FiPlay />
-            )}
-            Start
-          </button>
-
-          <button
-            className="btn btn-sm"
-            disabled={!canStopAbort}
-            onClick={onStopMission}
-          >
-            {busy ? (
-              <span className="loading loading-spinner loading-xs" />
-            ) : (
-              <FiSquare />
-            )}
-            Stop
-          </button>
-
-          <button
-            className="btn btn-sm btn-error btn-outline"
-            disabled={!canStopAbort}
-            onClick={onAbortMission}
-          >
-            {busy ? (
-              <span className="loading loading-spinner loading-xs" />
-            ) : (
-              <FiXOctagon />
-            )}
-            Abort
-          </button>
-        </div>
-      </div>
-
-      <div className="divider my-5" />
-
-      <div className="flex items-center justify-between">
-        <div className="text-sm font-semibold">Saved start points</div>
-        <span className="badge badge-outline">{startPoints.length}</span>
-      </div>
-
-      <div className="mt-3 flex-1 min-h-0">
-        {startPoints.length === 0 ? (
-          <div className="text-sm opacity-60">
-            No points yet. Click on the map to add one.
           </div>
-        ) : (
-          <ul className="menu menu-sm rounded-box border border-base-300 bg-base-100">
-            {startPoints.map((p) => (
-              <li key={p.id}>
-                <button
-                  type="button"
-                  className={p.id === selectedStartPointId ? "active" : ""}
-                  onClick={() => onSelectStartPoint(p.id)}
-                >
-                  <span className="font-medium">{p.name}</span>
-                  <span className="text-xs opacity-60 font-mono">
-                    {p.latlng.lat.toFixed(5)}, {p.latlng.lng.toFixed(5)}
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
+
+          {errorText ? (
+            <div className="mt-4 rounded-2xl border border-error/30 bg-error/10 px-3 py-3 text-sm text-error">
+              {errorText}
+            </div>
+          ) : null}
+
+          <div className="mt-5">
+            <button
+              className="btn btn-primary w-full rounded-xl px-5"
+              disabled={!canStart}
+              onClick={handleStartClick}
+            >
+              {busy ? <span className="loading loading-spinner loading-xs" /> : <FiPlay />}
+              Start mission
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="mt-5 rounded-[1.75rem] border border-base-300 bg-base-200/60 p-4">
+            <div className="text-sm font-semibold">Active mission</div>
+            <div className="mt-1 text-xs text-base-content/60">
+              Mission parameters are locked while the logger is running.
+            </div>
+
+            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="rounded-2xl border border-base-300 bg-base-100 px-4 py-3">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-base-content/45">
+                  Location source
+                </div>
+                <div className="mt-1 text-sm font-semibold">
+                  {activeLocationMode === "gps" ? "GPS" : "Fixed"}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-base-300 bg-base-100 px-4 py-3">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-base-content/45">
+                  Mission id
+                </div>
+                <div className="mt-1 font-mono text-sm">
+                  {deviceState?.mission_id || "—"}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-5 flex flex-wrap items-center gap-2">
+            <button className="btn rounded-xl" disabled={busy} onClick={onStopMission}>
+              {busy ? <span className="loading loading-spinner loading-xs" /> : <FiSquare />}
+              Stop
+            </button>
+
+            <button className="btn btn-error btn-outline rounded-xl" disabled={busy} onClick={onAbortMission}>
+              {busy ? <span className="loading loading-spinner loading-xs" /> : <FiXOctagon />}
+              Abort
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 }
