@@ -303,7 +303,7 @@ export default function LocationPickerPanel({
                 <span className="badge badge-outline">{filteredPoints.length}</span>
               </div>
 
-              <div className="mt-3 min-h-0 flex-1 overflow-y-auto rounded-2xl border border-base-300 bg-base-100 p-2">
+              <div className="mt-3 max-h-[252px] overflow-y-auto rounded-2xl border border-base-300 bg-base-100 p-2 custom-scrollbar">
                 {filteredPoints.length === 0 ? (
                   <div className="flex h-full min-h-40 items-center justify-center text-center text-sm text-base-content/55">
                     No locations found.

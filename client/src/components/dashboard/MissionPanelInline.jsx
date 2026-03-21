@@ -1,6 +1,5 @@
 import React, { useMemo, useState } from "react";
 import {
-  FiAlertTriangle,
   FiCamera,
   FiChevronDown,
   FiClock,
@@ -11,7 +10,6 @@ import {
   FiXOctagon,
 } from "react-icons/fi";
 
-// Păstrăm funcțiile tale originale [cite: 93, 102]
 function getRuntimeMeta(runtimeState) {
   const state = String(runtimeState || "").trim().toUpperCase();
 
@@ -79,12 +77,12 @@ function buildDefaultMissionName(startPoint) {
     hour: "2-digit",
     minute: "2-digit",
   });
+
   return startPoint?.name
     ? `${startPoint.name} - ${dateStr} ${timeStr}`
     : `Mission ${dateStr} ${timeStr}`;
 }
 
-// STILUL TĂU ORIGINAL PENTRU ETICHETE (Uppercase, mic) [cite: 105]
 function SectionLabel({ children }) {
   return (
     <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-base-content/45">
@@ -93,8 +91,14 @@ function SectionLabel({ children }) {
   );
 }
 
-// AM REVENIT LA INPUT-SM [cite: 106]
-function NumberField({ label, value, onChange, min, step = "1", disabled = false }) {
+function NumberField({
+  label,
+  value,
+  onChange,
+  min,
+  step = "1",
+  disabled = false,
+}) {
   return (
     <label className="form-control w-full">
       <SectionLabel>{label}</SectionLabel>
@@ -111,8 +115,13 @@ function NumberField({ label, value, onChange, min, step = "1", disabled = false
   );
 }
 
-// AM REVENIT LA SELECT-SM [cite: 108]
-function SelectField({ label, value, onChange, options, disabled = false }) {
+function SelectField({
+  label,
+  value,
+  onChange,
+  options,
+  disabled = false,
+}) {
   return (
     <label className="form-control w-full">
       <SectionLabel>{label}</SectionLabel>
@@ -130,6 +139,37 @@ function SelectField({ label, value, onChange, options, disabled = false }) {
       </select>
     </label>
   );
+}
+
+function InfoStackRow({ label, value, mono = false, icon: Icon = null }) {
+  return (
+    <div className="rounded-2xl border border-base-300 bg-base-100 px-4 py-3">
+      <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-base-content/45">
+        {Icon ? <Icon className="text-[13px]" /> : null}
+        {label}
+      </div>
+      <div
+        className={`mt-1.5 text-sm font-semibold text-base-content ${
+          mono ? "font-mono break-all" : ""
+        }`}
+      >
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function formatGpsMode(value) {
+  if (value === "off") return "Disabled";
+  if (value === "required") return "Enabled (required)";
+  if (value === "best_effort") return "Enabled (best effort)";
+  return "Unknown";
+}
+
+function formatCameraMode(value) {
+  if (value === "on") return "Enabled";
+  if (value === "off") return "Disabled";
+  return "Unknown";
 }
 
 export default function MissionPanelInline({
@@ -165,12 +205,15 @@ export default function MissionPanelInline({
 
   const activeProfile = deviceState?.profile || null;
   const activeLocationMode = activeProfile?.location_mode || locationMode || "gps";
+  const activeMissionName =
+    deviceState?.mission_name || deviceState?.mission_id || "—";
 
   async function handleStartClick() {
     setErrorText("");
 
     const payload = {
-      mission_name: missionName.trim() || buildDefaultMissionName(selectedStartPoint),
+      mission_name:
+        missionName.trim() || buildDefaultMissionName(selectedStartPoint),
       duration: Number(duration),
       camera_mode: cameraMode,
       gps_mode: gpsMode,
@@ -192,12 +235,14 @@ export default function MissionPanelInline({
   }
 
   return (
-    <div className="flex h-full flex-col p-5">
+    <div className="flex h-full flex-col bg-base-100 p-5">
       <div className="flex items-start justify-between gap-3 border-b border-base-300 pb-4">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <FiNavigation className="text-primary" />
-            <div className="text-base font-semibold text-base-content">Mission control</div>
+            <div className="text-base font-semibold text-base-content">
+              Mission control
+            </div>
           </div>
           <div className="mt-1 text-sm text-base-content/60">
             Configure mission parameters and location source.
@@ -208,7 +253,10 @@ export default function MissionPanelInline({
           <span className="inline-flex items-center gap-2">
             <span className="inline-grid shrink-0 *:[grid-area:1/1]">
               {runtimeBadge.pulsing ? (
-                <div className={`${runtimeBadge.statusClass} animate-ping`} aria-hidden="true" />
+                <div
+                  className={`${runtimeBadge.statusClass} animate-ping`}
+                  aria-hidden="true"
+                />
               ) : null}
               <div className={runtimeBadge.statusClass} aria-hidden="true" />
             </span>
@@ -233,7 +281,13 @@ export default function MissionPanelInline({
               />
             </label>
 
-            <NumberField label="Duration (s)" value={duration} onChange={setDuration} min={1} disabled={busy} />
+            <NumberField
+              label="Duration (s)"
+              value={duration}
+              onChange={setDuration}
+              min={1}
+              disabled={busy}
+            />
 
             <div className="grid grid-cols-2 gap-4">
               <SelectField
@@ -268,16 +322,38 @@ export default function MissionPanelInline({
                 disabled={busy}
               >
                 <div>
-                  <div className="text-sm font-semibold text-base-content">Advanced settings</div>
-                  <div className="text-xs text-base-content/55">Sampling and capture frequency</div>
+                  <div className="text-sm font-semibold text-base-content">
+                    Advanced settings
+                  </div>
+                  <div className="text-xs text-base-content/55">
+                    Sampling and capture frequency
+                  </div>
                 </div>
-                <FiChevronDown className={`text-base-content/50 transition-transform duration-200 ${advancedOpen ? "rotate-180" : ""}`} />
+                <FiChevronDown
+                  className={`text-base-content/50 transition-transform duration-200 ${
+                    advancedOpen ? "rotate-180" : ""
+                  }`}
+                />
               </button>
 
               {advancedOpen && (
                 <div className="grid grid-cols-2 gap-4 border-t border-base-300 px-4 py-4">
-                  <NumberField label="Sample rate (Hz)" value={sampleHz} onChange={setSampleHz} min={0.1} step="0.1" disabled={busy} />
-                  <NumberField label="Photos every (s)" value={photoEvery} onChange={setPhotoEvery} min={0} step="1" disabled={busy} />
+                  <NumberField
+                    label="Sample rate (Hz)"
+                    value={sampleHz}
+                    onChange={setSampleHz}
+                    min={0.1}
+                    step="0.1"
+                    disabled={busy}
+                  />
+                  <NumberField
+                    label="Photos every (s)"
+                    value={photoEvery}
+                    onChange={setPhotoEvery}
+                    min={0}
+                    step="1"
+                    disabled={busy}
+                  />
                 </div>
               )}
             </div>
@@ -289,7 +365,9 @@ export default function MissionPanelInline({
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 text-sm font-semibold">
                       <FiMapPin className="text-primary" />
-                      {locationMode === "gps" ? "GPS live location" : selectedStartPoint?.name || "Fixed location"}
+                      {locationMode === "gps"
+                        ? "GPS live location"
+                        : selectedStartPoint?.name || "Fixed location"}
                     </div>
                     <div className="mt-2 text-sm text-base-content/65">
                       {locationMode === "gps"
@@ -299,8 +377,12 @@ export default function MissionPanelInline({
                         : "Choose a saved location or create a new one from the map."}
                     </div>
                   </div>
-                  
-                  <button className="btn btn-sm rounded-xl border-base-300 bg-base-100" onClick={onOpenLocationPicker} disabled={busy}>
+
+                  <button
+                    className="btn btn-sm rounded-xl border-base-300 bg-base-100"
+                    onClick={onOpenLocationPicker}
+                    disabled={busy}
+                  >
                     Change
                   </button>
                 </div>
@@ -320,7 +402,11 @@ export default function MissionPanelInline({
               disabled={!canStart}
               onClick={handleStartClick}
             >
-              {busy ? <span className="loading loading-spinner loading-xs" /> : <FiPlay />}
+              {busy ? (
+                <span className="loading loading-spinner loading-xs" />
+              ) : (
+                <FiPlay />
+              )}
               Start mission
             </button>
           </div>
@@ -333,35 +419,64 @@ export default function MissionPanelInline({
               Mission parameters are locked while the logger is running.
             </div>
 
-            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <div className="rounded-2xl border border-base-300 bg-base-100 px-4 py-3">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-base-content/45">
-                  Location source
-                </div>
-                <div className="mt-1 text-sm font-semibold">
-                  {activeLocationMode === "gps" ? "GPS" : "Fixed"}
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-base-300 bg-base-100 px-4 py-3">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-base-content/45">
-                  Mission id
-                </div>
-                <div className="mt-1 font-mono text-sm">
-                  {deviceState?.mission_id || "—"}
-                </div>
-              </div>
+            <div className="mt-4 space-y-3">
+              <InfoStackRow label="Mission name" value={activeMissionName} />
+              <InfoStackRow
+                label="Mission id"
+                value={deviceState?.mission_id || "—"}
+                mono
+              />
+              <InfoStackRow
+                label="Location source"
+                value={activeLocationMode === "gps" ? "GPS live" : "Fixed point"}
+                icon={FiMapPin}
+              />
+              <InfoStackRow
+                label="Camera"
+                value={formatCameraMode(activeProfile?.camera_mode)}
+                icon={FiCamera}
+              />
+              <InfoStackRow
+                label="GPS"
+                value={formatGpsMode(activeProfile?.gps_mode)}
+                icon={FiNavigation}
+              />
+              <InfoStackRow
+                label="Duration"
+                value={
+                  activeProfile?.duration_s != null
+                    ? `${activeProfile.duration_s} s`
+                    : "—"
+                }
+                icon={FiClock}
+              />
             </div>
           </div>
 
-          <div className="mt-5 flex flex-wrap items-center gap-2">
-            <button className="btn rounded-xl" disabled={busy} onClick={onStopMission}>
-              {busy ? <span className="loading loading-spinner loading-xs" /> : <FiSquare />}
+          <div className="mt-5 grid grid-cols-2 gap-3">
+            <button
+              className="btn w-full rounded-xl"
+              disabled={busy}
+              onClick={onStopMission}
+            >
+              {busy ? (
+                <span className="loading loading-spinner loading-xs" />
+              ) : (
+                <FiSquare />
+              )}
               Stop
             </button>
 
-            <button className="btn btn-error btn-outline rounded-xl" disabled={busy} onClick={onAbortMission}>
-              {busy ? <span className="loading loading-spinner loading-xs" /> : <FiXOctagon />}
+            <button
+              className="btn btn-error btn-outline w-full rounded-xl"
+              disabled={busy}
+              onClick={onAbortMission}
+            >
+              {busy ? (
+                <span className="loading loading-spinner loading-xs" />
+              ) : (
+                <FiXOctagon />
+              )}
               Abort
             </button>
           </div>

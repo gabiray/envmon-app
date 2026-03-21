@@ -18,7 +18,7 @@ export default function MissionMapPanel({
   onAbortMission = () => {},
 }) {
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [pickerMode, setPickerMode] = useState("chooser"); // chooser | gps-new
+  const [pickerMode, setPickerMode] = useState("chooser");
   const [locationMode, setLocationMode] = useState("gps");
   const [mapPickEnabled, setMapPickEnabled] = useState(false);
   const [pendingMapPick, setPendingMapPick] = useState(null);
@@ -118,73 +118,73 @@ export default function MissionMapPanel({
   }
 
   return (
-    <section className="overflow-hidden rounded-3xl border border-base-300 bg-base-100 shadow-xl flex flex-col xl:flex-row min-h-[800px]">
-      {/* Panoul Lateral */}
-      <div className="w-full xl:w-[450px] shrink-0 border-b border-base-300 bg-base-100 xl:border-b-0 xl:border-r relative overflow-hidden z-10">
-        <div
-          className={`flex h-full w-[200%] transition-transform duration-300 ease-in-out ${
-            pickerOpen ? "-translate-x-1/2" : "translate-x-0"
-          }`}
-        >
-          {/* Mission Control Panel */}
-          <div className="w-1/2 h-full overflow-y-auto">
-            <MissionPanelInline
-              runtimeState={deviceState?.state || null}
-              deviceStatus={deviceStatus}
-              deviceState={deviceState}
-              locationMode={locationMode}
-              selectedStartPoint={selectedStartPoint}
-              missionRunning={missionRunning}
-              busy={busy}
-              onOpenLocationPicker={openChooserPanel}
-              onRequestGpsLocationName={handleNeedGpsLocationName}
-              onStartMission={onStartMission}
-              onStopMission={onStopMission}
-              onAbortMission={onAbortMission}
-            />
+    <section className="overflow-hidden rounded-3xl border border-base-300 bg-base-100 shadow-xl">
+      <div className="flex flex-col xl:flex-row min-h-165">
+        {/* Panoul din stânga */}
+        <div className="w-full shrink-0 border-b border-base-300 bg-base-100 xl:w-[430px] xl:border-b-0 xl:border-r">
+          <div className="h-full">
+            {pickerOpen ? (
+              <div className="h-full overflow-y-auto">
+                <LocationPickerPanel
+                  mode={pickerMode}
+                  locationMode={locationMode}
+                  gpsDraftCoords={gpsDraftCoords}
+                  startPoints={startPoints}
+                  selectedStartPointId={selectedStartPointId}
+                  pendingMapPick={pendingMapPick}
+                  mapPickEnabled={mapPickEnabled}
+                  busy={pickerBusy}
+                  errorText={pickerErrorText}
+                  onSelectStartPoint={onSelectStartPoint}
+                  onChooseGpsMode={handleChooseGpsMode}
+                  onChooseFixedMode={handleChooseFixedMode}
+                  onToggleMapPick={() => setMapPickEnabled((prev) => !prev)}
+                  onClearPendingMapPick={() => setPendingMapPick(null)}
+                  onSavePickedLocation={handleSavePickedLocation}
+                  onSaveGpsNamedLocation={handleSaveGpsNamedLocation}
+                  onConfirmFixed={handleConfirmFixed}
+                  onBack={closePicker}
+                />
+              </div>
+            ) : (
+              <div className="h-full overflow-y-auto">
+                <MissionPanelInline
+                  runtimeState={deviceState?.state || null}
+                  deviceStatus={deviceStatus}
+                  deviceState={deviceState}
+                  locationMode={locationMode}
+                  selectedStartPoint={selectedStartPoint}
+                  missionRunning={missionRunning}
+                  busy={busy}
+                  onOpenLocationPicker={openChooserPanel}
+                  onRequestGpsLocationName={handleNeedGpsLocationName}
+                  onStartMission={onStartMission}
+                  onStopMission={onStopMission}
+                  onAbortMission={onAbortMission}
+                />
+              </div>
+            )}
           </div>
+        </div>
 
-          {/* Location Picker Panel */}
-          <div className="w-1/2 h-full overflow-y-auto border-l border-base-200">
-            <LocationPickerPanel
-              mode={pickerMode}
-              locationMode={locationMode}
-              gpsDraftCoords={gpsDraftCoords}
+        {/* Harta */}
+        <div className="relative min-h-130 flex-1 bg-base-200 xl:min-h-0">
+          <div className="absolute inset-0">
+            <MissionMapLibreMap
               startPoints={startPoints}
               selectedStartPointId={selectedStartPointId}
               pendingMapPick={pendingMapPick}
-              mapPickEnabled={mapPickEnabled}
-              busy={pickerBusy}
-              errorText={pickerErrorText}
-              onSelectStartPoint={onSelectStartPoint}
-              onChooseGpsMode={handleChooseGpsMode}
-              onChooseFixedMode={handleChooseFixedMode}
-              onToggleMapPick={() => setMapPickEnabled((prev) => !prev)}
-              onClearPendingMapPick={() => setPendingMapPick(null)}
-              onSavePickedLocation={handleSavePickedLocation}
-              onSaveGpsNamedLocation={handleSaveGpsNamedLocation}
-              onConfirmFixed={handleConfirmFixed}
-              onBack={closePicker}
+              mapPickEnabled={
+                pickerOpen && locationMode === "fixed" && mapPickEnabled
+              }
+              onMapPick={setPendingMapPick}
+              onSelectStartPoint={(id) => {
+                setPendingMapPick(null);
+                onSelectStartPoint(id);
+              }}
             />
           </div>
         </div>
-      </div>
-
-      {/* Harta - Fără margini/padding */}
-      <div className="relative flex-1 bg-base-200 min-h-[400px] xl:min-h-full">
-        <MissionMapLibreMap
-          startPoints={startPoints}
-          selectedStartPointId={selectedStartPointId}
-          pendingMapPick={pendingMapPick}
-          mapPickEnabled={
-            pickerOpen && locationMode === "fixed" && mapPickEnabled
-          }
-          onMapPick={setPendingMapPick}
-          onSelectStartPoint={(id) => {
-            setPendingMapPick(null);
-            onSelectStartPoint(id);
-          }}
-        />
       </div>
     </section>
   );
