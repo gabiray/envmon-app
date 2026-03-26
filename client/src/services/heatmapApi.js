@@ -12,9 +12,14 @@ export async function fetchMissionTrack(mission_id) {
   return Array.isArray(data) ? data : [];
 }
 
+export async function fetchMissionStats(mission_id) {
+  const { data } = await api.get(`/db/missions/${mission_id}/stats`);
+  return data || null;
+}
+
 export async function fetchHeatGrid({ mission_id, metric = "temp_c", cell_m = 15 }) {
   const { data } = await api.get("/db/heatmap", {
     params: { mission_id, metric, cell_m },
   });
-  return data; // { cells, value_min, value_max, ... }
+  return data;
 }

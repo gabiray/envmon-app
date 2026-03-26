@@ -120,67 +120,67 @@ export default function HeatMap() {
   }
 
   return (
-    <HeatMapLayout
-      sidebar={
-        <HeatMapSidebar
-          activeDevice={activeDevice}
-          selectedDeviceId={selectedDeviceId}
-          profileType={profileType}
-          profiles={profiles}
-          searchValue={searchValue}
-          onProfileChange={handleProfileSelect}
-          onSearchChange={setSearchValue}
-          missionCount={activeDeviceMissions.length}
-          missions={activeDeviceMissions}
-          loading={loading}
-          errorText={errorText}
-          selectedMission={selectedMission}
-          selectedMissionId={selectedMissionId}
-          expandedMissionIds={expandedMissionIds}
-          onToggleMissionExpand={handleToggleMissionExpand}
-          onSelectMission={handleSelectMission}
-          onBackToExplorer={handleBackToExplorer}
-          showTrack={visibleLayers.track}
-          showHeatmap={visibleLayers.heatmap}
-          heatmapMetric={heatmapMetric}
-          heatmapCellM={heatmapCellM}
-          onToggleTrack={() =>
-            setVisibleLayers((prev) => ({ ...prev, track: !prev.track }))
-          }
-          onToggleHeatmap={() =>
-            setVisibleLayers((prev) => ({ ...prev, heatmap: !prev.heatmap }))
-          }
-          onHeatmapMetricChange={setHeatmapMetric}
-          onHeatmapCellMChange={setHeatmapCellM}
-        />
-      }
-      map={
-        <HeatMapMapView
-          activeDevice={activeDevice}
-          selectedDeviceId={selectedDeviceId}
-          profileLabel={
-            profiles.find((item) => item.type === profileType)?.label ||
-            "Unknown profile"
-          }
-          selectedMission={selectedMission}
-          locationPins={locationPins}
-          selectedLocationKey={selectedLocationKey}
-          onSelectLocationPin={handleSelectLocationPin}
-          onSelectMission={handleSelectMission}
-          onCloseLocationPopover={handleCloseLocationPopover}
-          showTrack={visibleLayers.track}
-          showHeatmap={visibleLayers.heatmap}
-          heatmapMetric={heatmapMetric}
-          layerLoading={layerLoading}
-          layerErrorText={layerErrorText}
-          trackGeoJson={trackGeoJson}
-          trackEndpointsGeoJson={trackEndpointsGeoJson}
-          heatGrid={heatGrid}
-          heatCellsGeoJson={heatCellsGeoJson}
-          trackBounds={trackBounds}
-          heatBounds={heatBounds}
-        />
-      }
-    />
+    <div className="h-[calc(100vh-9.5rem)] min-h-[680px]">
+      <HeatMapLayout
+        sidebar={
+          <HeatMapSidebar
+            activeDevice={activeDevice}
+            selectedDeviceId={selectedDeviceId}
+            profileType={profileType}
+            profiles={profiles}
+            searchValue={searchValue}
+            onProfileChange={handleProfileSelect}
+            onSearchChange={setSearchValue}
+            missionCount={activeDeviceMissions.length}
+            missions={activeDeviceMissions}
+            loading={loading}
+            errorText={errorText}
+            selectedMission={selectedMission}
+            selectedMissionId={selectedMissionId}
+            onSelectMission={handleSelectMission}
+            onBackToExplorer={handleBackToExplorer}
+            showTrack={visibleLayers.track}
+            showHeatmap={visibleLayers.heatmap}
+            heatmapMetric={heatmapMetric}
+            heatmapCellM={heatmapCellM}
+            onToggleTrack={() =>
+              setVisibleLayers((prev) => ({ ...prev, track: !prev.track }))
+            }
+            onToggleHeatmap={() =>
+              setVisibleLayers((prev) => ({ ...prev, heatmap: !prev.heatmap }))
+            }
+            onHeatmapMetricChange={setHeatmapMetric}
+            onHeatmapCellMChange={setHeatmapCellM}
+          />
+        }
+        map={
+          <HeatMapMapView
+            activeDevice={activeDevice}
+            selectedDeviceId={selectedDeviceId}
+            profileLabel={
+              profiles.find((item) => item.type === profileType)?.label ||
+              "Unknown profile"
+            }
+            selectedMission={selectedMission}
+            locationPins={locationPins}
+            selectedLocationKey={selectedLocationKey}
+            onSelectLocationPin={handleSelectLocationPin}
+            onSelectMission={handleSelectMission}
+            onCloseLocationPopover={handleCloseLocationPopover}
+            showTrack={visibleLayers.track}
+            showHeatmap={visibleLayers.heatmap}
+            heatmapMetric={heatmapMetric}
+            heatGrid={heatGrid}
+            layerLoading={layerLoading}
+            layerErrorText={layerErrorText}
+            trackGeoJson={trackGeoJson}
+            trackEndpointsGeoJson={trackEndpointsGeoJson}
+            heatCellsGeoJson={heatCellsGeoJson}
+            trackBounds={trackBounds}
+            heatBounds={heatBounds}
+          />
+        }
+      />
+    </div>
   );
 }

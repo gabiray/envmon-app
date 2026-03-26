@@ -10,7 +10,7 @@ export default function HeatMapMissionList({
 }) {
   if (loading) {
     return (
-      <div className="flex h-full min-h-[220px] items-center justify-center rounded-3xl border border-dashed border-base-300 bg-base-200/40 px-6 text-center">
+      <div className="flex h-full min-h-[220px] items-center justify-center rounded-3xl border border-dashed border-base-300 bg-base-100 px-6 text-center">
         <div>
           <div className="loading loading-spinner loading-md text-primary" />
           <div className="mt-3 text-sm text-base-content/60">
@@ -36,14 +36,14 @@ export default function HeatMapMissionList({
 
   if (!missions.length) {
     return (
-      <div className="flex h-full min-h-[220px] items-center justify-center rounded-3xl border border-dashed border-base-300 bg-base-200/40 px-6 text-center text-sm text-base-content/55">
+      <div className="flex h-full min-h-[220px] items-center justify-center rounded-3xl border border-dashed border-base-300 bg-base-100 px-6 text-center text-sm text-base-content/55">
         No missions found.
       </div>
     );
   }
 
   return (
-    <div className="h-full max-h-[420px] overflow-y-auto pr-1 custom-scrollbar">
+    <div className="h-full min-h-0 overflow-y-auto pr-1 custom-scrollbar">
       <div className="space-y-3">
         {missions.map((mission) => (
           <HeatMapMissionListItem

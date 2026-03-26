@@ -1,8 +1,7 @@
-import React from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   FiActivity,
   FiArrowLeft,
-  FiCamera,
   FiChevronDown,
   FiClock,
   FiCpu,
@@ -17,6 +16,7 @@ import { MdDirectionsBike } from "react-icons/md";
 import { FaCarSide } from "react-icons/fa";
 
 import HeatMapMissionList from "./HeatMapMissionList";
+import { fetchMissionStats } from "../../services/heatmapApi";
 
 const METRIC_OPTIONS = [
   { value: "temp_c", label: "Temperature (°C)" },
@@ -81,28 +81,6 @@ function formatEpoch(epoch) {
   }
 }
 
-function getStatusBadgeClass(status) {
-  const key = String(status || "").trim().toLowerCase();
-
-  if (key === "completed" || key === "done") {
-    return "badge badge-outline border-success/30 bg-success/10 text-success";
-  }
-
-  if (key === "running") {
-    return "badge badge-outline border-info/30 bg-info/10 text-info";
-  }
-
-  if (key === "arming") {
-    return "badge badge-outline border-warning/30 bg-warning/10 text-warning";
-  }
-
-  if (key === "aborted" || key === "error" || key === "failed") {
-    return "badge badge-outline border-error/30 bg-error/10 text-error";
-  }
-
-  return "badge badge-outline border-base-300 bg-base-200 text-base-content/70";
-}
-
 function DetailTile({
   label,
   value,
@@ -148,6 +126,117 @@ function LayerToggleButton({ active = false, icon: Icon, label, onClick }) {
   );
 }
 
+function ProfileDropdown({
+  profiles = [],
+  value,
+  disabled = false,
+  onChange = () => {},
+}) {
+  const rootRef = useRef(null);
+  const [open, setOpen] = useState(false);
+
+  const selectedProfile = useMemo(() => {
+    return profiles.find((item) => item.type === value) || { type: value };
+  }, [profiles, value]);
+
+  const selectedMeta = getProfileMeta(selectedProfile.type);
+  const SelectedIcon = selectedMeta.Icon;
+
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (!rootRef.current?.contains(event.target)) {
+        setOpen(false);
+      }
+    }
+
+    window.addEventListener("mousedown", handleClickOutside);
+    return () => window.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  return (
+    <div ref={rootRef} className="relative">
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => !disabled && setOpen((prev) => !prev)}
+        className={[
+          "flex w-full items-center gap-3 rounded-2xl border px-3 py-3 text-left shadow-sm transition",
+          "border-base-300 bg-base-100 hover:border-primary/25 hover:bg-base-200/40",
+          "disabled:cursor-not-allowed disabled:opacity-60",
+        ].join(" ")}
+      >
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-primary/15 bg-primary/10 text-primary">
+          <SelectedIcon className="text-lg" />
+        </span>
+
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm font-semibold text-base-content">
+            {selectedMeta.label}
+          </span>
+          <span className="mt-0.5 block truncate text-xs text-base-content/55">
+            {selectedMeta.description}
+          </span>
+        </span>
+
+        <FiChevronDown
+          className={`shrink-0 text-base-content/45 transition-transform ${
+            open ? "rotate-180" : ""
+          }`}
+        />
+      </button>
+
+      {open ? (
+        <div className="absolute inset-x-0 top-[calc(100%+0.5rem)] z-[40] overflow-hidden rounded-2xl border border-base-300 bg-base-100 p-2 shadow-xl">
+          <div className="space-y-1">
+            {profiles.map((profile) => {
+              const meta = getProfileMeta(profile.type);
+              const Icon = meta.Icon;
+              const active = profile.type === value;
+
+              return (
+                <button
+                  key={profile.type}
+                  type="button"
+                  onClick={() => {
+                    onChange(profile.type);
+                    setOpen(false);
+                  }}
+                  className={[
+                    "flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition",
+                    active
+                      ? "bg-primary/10 text-primary"
+                      : "text-base-content hover:bg-base-200/70",
+                  ].join(" ")}
+                >
+                  <span
+                    className={[
+                      "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg",
+                      active
+                        ? "bg-primary text-primary-content"
+                        : "bg-base-200 text-base-content/70",
+                    ].join(" ")}
+                  >
+                    <Icon className="text-sm" />
+                  </span>
+
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-semibold">
+                      {profile.label || meta.label}
+                    </span>
+                    <span className="block truncate text-xs opacity-65">
+                      {meta.description}
+                    </span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export default function HeatMapSidebar({
   activeDevice = null,
   selectedDeviceId = "none",
@@ -175,9 +264,13 @@ export default function HeatMapSidebar({
 }) {
   const hasActiveDevice = Boolean(activeDevice && selectedDeviceId !== "none");
   const profileMeta = getProfileMeta(profileType);
-  const ProfileIcon = profileMeta.Icon;
-
   const isDetailsMode = Boolean(selectedMission);
+
+  const [detailsExpanded, setDetailsExpanded] = useState(false);
+
+  useEffect(() => {
+    setDetailsExpanded(false);
+  }, [selectedMissionId]);
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-base-100">
@@ -226,51 +319,8 @@ export default function HeatMapSidebar({
               </button>
             </div>
 
-            <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <DetailTile
-                label="Status"
-                icon={FiActivity}
-                value={
-                  <span className={getStatusBadgeClass(selectedMission.status)}>
-                    {selectedMission.status || "Unknown"}
-                  </span>
-                }
-              />
-
-              <DetailTile
-                label="Location mode"
-                icon={FiMapPin}
-                value={selectedMission.locationMode || "Unknown"}
-              />
-
-              <DetailTile
-                label="Started"
-                icon={FiClock}
-                value={formatEpoch(selectedMission.startedAtEpoch)}
-              />
-
-              <DetailTile
-                label="Coordinates"
-                icon={FiMapPin}
-                value={selectedMission.locationLabel || "—"}
-                mono
-              />
-
-              <DetailTile
-                label="GPS data"
-                icon={FiNavigation}
-                value={selectedMission.hasGps ? "Available" : "Missing"}
-              />
-
-              <DetailTile
-                label="Images"
-                icon={FiImage}
-                value={selectedMission.hasImages ? "Available" : "Missing"}
-              />
-            </div>
-
-            <div className="mt-5 border-t border-base-300 pt-4">
-              <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-base-content/45">
+            <div className="mt-5 rounded-3xl border border-base-300 bg-base-200/30 p-4">
+              <div className="mb-3 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-base-content/45">
                 <FiActivity />
                 Mission layers
               </div>
@@ -289,82 +339,145 @@ export default function HeatMapSidebar({
                   label="View heatmap"
                   onClick={onToggleHeatmap}
                 />
-
-                <span className="ml-auto inline-flex items-center gap-1 rounded-full border border-base-300 bg-base-200 px-2.5 py-1 text-xs text-base-content/65">
-                  <FiCamera className="text-[12px]" />
-                  {selectedMission.hasImages ? "Camera used" : "No images"}
-                </span>
               </div>
+
+              {showHeatmap ? (
+                <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_130px]">
+                  <label className="form-control">
+                    <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-base-content/45">
+                      Heatmap metric
+                    </div>
+
+                    <select
+                      className="select select-bordered w-full rounded-2xl"
+                      value={heatmapMetric}
+                      onChange={(e) => onHeatmapMetricChange(e.target.value)}
+                    >
+                      {METRIC_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="form-control">
+                    <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-base-content/45">
+                      Cell size (m)
+                    </div>
+
+                    <input
+                      className="input input-bordered w-full rounded-2xl"
+                      type="number"
+                      min="2"
+                      step="1"
+                      value={heatmapCellM}
+                      onChange={(e) =>
+                        onHeatmapCellMChange(Number(e.target.value) || 15)
+                      }
+                    />
+                  </label>
+                </div>
+              ) : null}
             </div>
 
-            {showHeatmap ? (
-              <div className="mt-4 grid grid-cols-1 gap-3 border-t border-base-300 pt-4 md:grid-cols-[minmax(0,1fr)_130px]">
-                <label className="form-control">
-                  <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-base-content/45">
-                    Heatmap metric
+            <div className="mt-4 overflow-hidden rounded-3xl border border-base-300 bg-base-100">
+              <button
+                type="button"
+                onClick={() => setDetailsExpanded((prev) => !prev)}
+                className="flex w-full items-center justify-between px-4 py-3 text-left transition hover:bg-base-200/50"
+              >
+                <div>
+                  <div className="text-sm font-semibold text-base-content">
+                    Mission information
                   </div>
-
-                  <select
-                    className="select select-bordered w-full rounded-2xl"
-                    value={heatmapMetric}
-                    onChange={(e) => onHeatmapMetricChange(e.target.value)}
-                  >
-                    {METRIC_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <label className="form-control">
-                  <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-base-content/45">
-                    Cell size (m)
+                  <div className="mt-0.5 text-xs text-base-content/55">
+                    Tap to {detailsExpanded ? "hide" : "show"} technical details
                   </div>
+                </div>
 
-                  <input
-                    className="input input-bordered w-full rounded-2xl"
-                    type="number"
-                    min="2"
-                    step="1"
-                    value={heatmapCellM}
-                    onChange={(e) =>
-                      onHeatmapCellMChange(Number(e.target.value) || 15)
-                    }
-                  />
-                </label>
-              </div>
-            ) : null}
+                <FiChevronDown
+                  className={`text-base-content/45 transition-transform duration-200 ${
+                    detailsExpanded ? "rotate-180" : ""
+                  }`}
+                />
+              </button>
+
+              {detailsExpanded ? (
+                <div className="max-h-[360px] overflow-y-auto px-4 pb-4 pt-4 pr-2 custom-scrollbar">
+                  <div className="grid grid-cols-1 gap-3">
+                    <DetailTile
+                      label="Started / ended"
+                      icon={FiClock}
+                      value={
+                        <div className="space-y-2">
+                          <div>
+                            <div className="text-[11px] font-medium uppercase tracking-[0.12em] text-base-content/45">
+                              Started
+                            </div>
+                            <div className="mt-1">
+                              {formatEpoch(selectedMission.startedAtEpoch)}
+                            </div>
+                          </div>
+
+                          <div>
+                            <div className="text-[11px] font-medium uppercase tracking-[0.12em] text-base-content/45">
+                              Ended
+                            </div>
+                            <div className="mt-1">
+                              {formatEpoch(selectedMission.endedAtEpoch)}
+                            </div>
+                          </div>
+                        </div>
+                      }
+                    />
+
+                    <DetailTile
+                      label="Location mode"
+                      icon={FiMapPin}
+                      value={selectedMission.locationMode || "Unknown"}
+                    />
+
+                    <DetailTile
+                      label="Coordinates"
+                      icon={FiMapPin}
+                      value={selectedMission.locationLabel || "—"}
+                      mono
+                    />
+
+                    <DetailTile
+                      label="GPS data"
+                      icon={FiNavigation}
+                      value={selectedMission.hasGps ? "Available" : "Missing"}
+                    />
+
+                    <DetailTile
+                      label="Images"
+                      icon={FiImage}
+                      value={selectedMission.hasImages ? "Available" : "Missing"}
+                    />
+                  </div>
+                </div>
+              ) : null}
+            </div>
           </>
         ) : (
           <>
             <div className="space-y-4">
-              <div className="rounded-2xl border border-base-300 bg-base-100 px-3 py-3">
-                <div className="flex items-center gap-3">
-                  <div className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-primary/20 bg-primary/8 text-primary">
-                    <ProfileIcon className="text-lg" />
-                  </div>
+              <div>
+                <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-base-content/45">
+                  Profile filter
+                </div>
 
-                  <div className="min-w-0 flex-1">
-                    <select
-                      className="select select-sm select-ghost w-full px-0 text-sm font-semibold"
-                      value={profileType}
-                      onChange={(e) => onProfileChange(e.target.value)}
-                      disabled={!hasActiveDevice}
-                    >
-                      {profiles.map((profile) => (
-                        <option key={profile.type} value={profile.type}>
-                          {profile.label || getProfileMeta(profile.type).label}
-                        </option>
-                      ))}
-                    </select>
+                <ProfileDropdown
+                  profiles={profiles}
+                  value={profileType}
+                  disabled={!hasActiveDevice}
+                  onChange={onProfileChange}
+                />
 
-                    <div className="mt-0.5 truncate text-xs text-base-content/55">
-                      {profileMeta.description}
-                    </div>
-                  </div>
-
-                  <FiChevronDown className="shrink-0 text-base-content/35" />
+                <div className="mt-2 text-xs text-base-content/60">
+                  {profileMeta.description}
                 </div>
               </div>
 
@@ -393,7 +506,7 @@ export default function HeatMapSidebar({
               <span className="badge badge-outline">{missionCount}</span>
             </div>
 
-            <div className="mt-4 min-h-0 flex-1">
+            <div className="mt-4 min-h-0 flex-1 overflow-hidden rounded-3xl border border-base-300 bg-base-200/30 p-2">
               <HeatMapMissionList
                 loading={loading}
                 errorText={errorText}
