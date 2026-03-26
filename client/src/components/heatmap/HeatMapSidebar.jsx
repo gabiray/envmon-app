@@ -1,10 +1,12 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React from "react";
 import {
+  FiActivity,
+  FiArrowLeft,
   FiCamera,
   FiChevronDown,
-  FiChevronLeft,
   FiClock,
   FiCpu,
+  FiImage,
   FiMapPin,
   FiNavigation,
   FiSearch,
@@ -13,6 +15,15 @@ import {
 import { TbDrone } from "react-icons/tb";
 import { MdDirectionsBike } from "react-icons/md";
 import { FaCarSide } from "react-icons/fa";
+
+import HeatMapMissionList from "./HeatMapMissionList";
+
+const METRIC_OPTIONS = [
+  { value: "temp_c", label: "Temperature (°C)" },
+  { value: "hum_pct", label: "Humidity (%)" },
+  { value: "press_hpa", label: "Pressure (hPa)" },
+  { value: "gas_ohms", label: "Gas resistance (Ω)" },
+];
 
 function getProfileMeta(type) {
   if (type === "drone") {
@@ -59,9 +70,9 @@ function formatEpoch(epoch) {
 
   try {
     return new Date(epoch * 1000).toLocaleString("ro-RO", {
-      year: "numeric",
-      month: "2-digit",
       day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
       hour: "2-digit",
       minute: "2-digit",
     });
@@ -70,354 +81,70 @@ function formatEpoch(epoch) {
   }
 }
 
-function getStatusBadge(status) {
-  const key = String(status || "").toLowerCase();
+function getStatusBadgeClass(status) {
+  const key = String(status || "").trim().toLowerCase();
 
   if (key === "completed" || key === "done") {
     return "badge badge-outline border-success/30 bg-success/10 text-success";
-  }
-
-  if (key === "aborted" || key === "error" || key === "failed") {
-    return "badge badge-outline border-error/30 bg-error/10 text-error";
   }
 
   if (key === "running") {
     return "badge badge-outline border-info/30 bg-info/10 text-info";
   }
 
+  if (key === "arming") {
+    return "badge badge-outline border-warning/30 bg-warning/10 text-warning";
+  }
+
+  if (key === "aborted" || key === "error" || key === "failed") {
+    return "badge badge-outline border-error/30 bg-error/10 text-error";
+  }
+
   return "badge badge-outline border-base-300 bg-base-200 text-base-content/70";
 }
 
-function ProfileDropdown({
-  profiles = [],
+function DetailTile({
+  label,
   value,
-  disabled = false,
-  onChange = () => {},
+  icon: Icon = null,
+  mono = false,
+  valueClassName = "",
 }) {
-  const rootRef = useRef(null);
-  const [open, setOpen] = useState(false);
-
-  const selectedProfile = useMemo(() => {
-    return profiles.find((item) => item.type === value) || { type: value };
-  }, [profiles, value]);
-
-  const selectedMeta = getProfileMeta(selectedProfile.type);
-  const SelectedProfileIcon = selectedMeta.Icon;
-
-  useEffect(() => {
-    function handleClickOutside(event) {
-      if (!rootRef.current?.contains(event.target)) {
-        setOpen(false);
-      }
-    }
-
-    window.addEventListener("mousedown", handleClickOutside);
-    return () => window.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
   return (
-    <div ref={rootRef} className={`dropdown ${open ? "dropdown-open" : ""}`}>
-      <button
-        type="button"
-        tabIndex={0}
-        className="btn btn-sm btn-outline rounded-xl w-12 min-w-12 px-0"
-        disabled={disabled}
-        aria-label="Select profile"
-        title={selectedMeta.label}
-        onClick={() => setOpen((prev) => !prev)}
+    <div className="rounded-2xl border border-base-300 bg-base-200/40 px-4 py-3">
+      <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-base-content/45">
+        {Icon ? <Icon className="text-[13px]" /> : null}
+        {label}
+      </div>
+
+      <div
+        className={[
+          "mt-1.5 text-sm font-semibold text-base-content",
+          mono ? "font-mono break-all" : "",
+          valueClassName,
+        ].join(" ")}
       >
-        <SelectedProfileIcon className="text-base opacity-85" />
-      </button>
-
-      <ul className="menu dropdown-content z-[30] mt-2 w-72 rounded-2xl border border-base-300 bg-base-100 p-2 shadow-xl">
-        {profiles.map((profile) => {
-          const meta = getProfileMeta(profile.type);
-          const Icon = meta.Icon;
-          const active = profile.type === value;
-
-          return (
-            <li key={profile.type}>
-              <button
-                type="button"
-                className={[
-                  "flex items-center gap-3 rounded-xl",
-                  active ? "bg-primary/10 text-primary" : "",
-                ].join(" ")}
-                onClick={() => {
-                  onChange(profile.type);
-                  setOpen(false);
-                }}
-              >
-                <span
-                  className={[
-                    "inline-flex h-8 w-8 items-center justify-center rounded-full",
-                    active
-                      ? "bg-primary text-primary-content"
-                      : "bg-base-200 text-base-content/70",
-                  ].join(" ")}
-                >
-                  <Icon className="text-sm" />
-                </span>
-
-                <span className="font-medium">
-                  {profile.label || meta.label}
-                </span>
-              </button>
-            </li>
-          );
-        })}
-      </ul>
+        {value}
+      </div>
     </div>
   );
 }
 
-function MissionListItem({
-  mission,
-  selected = false,
-  expanded = false,
-  onSelect = () => {},
-  onToggleExpand = () => {},
-}) {
-  const rootRef = useRef(null);
-
-  function handleToggleExpand(e) {
-    e.stopPropagation();
-    onToggleExpand(mission.missionId);
-
-    requestAnimationFrame(() => {
-      rootRef.current?.scrollIntoView({
-        block: "start",
-        behavior: "smooth",
-      });
-    });
-  }
-
+function LayerToggleButton({ active = false, icon: Icon, label, onClick }) {
   return (
-    <div
-      ref={rootRef}
+    <button
+      type="button"
+      onClick={onClick}
       className={[
-        "rounded-2xl border transition-all",
-        selected
-          ? "border-primary/35 bg-primary/5 shadow-sm"
-          : "border-base-300 bg-base-100 hover:border-primary/20 hover:bg-base-200/40",
+        "btn btn-sm rounded-xl",
+        active
+          ? "btn-primary text-white border-none"
+          : "btn-outline border-base-300 bg-base-100 hover:bg-base-200",
       ].join(" ")}
     >
-      <button
-        type="button"
-        onClick={() => onSelect(mission)}
-        className="w-full px-4 py-3 text-left"
-      >
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div className="truncate text-sm font-semibold text-base-content">
-              {mission.missionName}
-            </div>
-            <div className="mt-1 text-xs text-base-content/55">
-              {mission.dateLabel}
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <span className={getStatusBadge(mission.status)}>
-              {mission.status || "Unknown"}
-            </span>
-
-            <button
-              type="button"
-              className="btn btn-ghost btn-xs rounded-lg"
-              onClick={handleToggleExpand}
-            >
-              <FiChevronDown
-                className={`transition-transform duration-200 ${
-                  expanded ? "rotate-180" : ""
-                }`}
-              />
-            </button>
-          </div>
-        </div>
-
-        <div className="mt-2 flex items-center gap-2 text-xs text-base-content/55">
-          <FiMapPin className="text-primary" />
-          <span className="truncate">{mission.locationLabel}</span>
-        </div>
-      </button>
-
-      {expanded ? (
-        <div className="border-t border-base-300 px-4 py-3">
-          <div className="grid grid-cols-1 gap-2 text-xs text-base-content/70">
-            <div className="flex items-center gap-2">
-              <FiNavigation className="text-base-content/45" />
-              <span>GPS: {mission.hasGps ? "Available" : "Missing"}</span>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <FiCamera className="text-base-content/45" />
-              <span>Images: {mission.hasImages ? "Available" : "Missing"}</span>
-            </div>
-
-            <div className="rounded-xl bg-base-200/70 px-3 py-2 font-mono text-[11px] text-base-content/65">
-              {mission.missionId}
-            </div>
-          </div>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function MissionDetailsInline({
-  mission,
-  showTrack = false,
-  showHeatmap = false,
-  heatmapMetric = "temp_c",
-  heatmapCellM = 15,
-  onToggleTrack = () => {},
-  onToggleHeatmap = () => {},
-  onHeatmapMetricChange = () => {},
-  onHeatmapCellMChange = () => {},
-  onBack = () => {},
-}) {
-  if (!mission) return null;
-
-  return (
-    <div className="flex h-full min-h-0 flex-col">
-      <div className="flex items-center justify-between border-b border-base-300 px-5 py-4">
-        <div className="min-w-0">
-          <div className="text-base font-semibold text-base-content">
-            Mission details
-          </div>
-          <div className="mt-1 truncate text-sm text-base-content/60">
-            {mission.missionName}
-          </div>
-        </div>
-
-        <button
-          type="button"
-          className="btn btn-sm rounded-xl border-base-300 bg-base-100"
-          onClick={onBack}
-        >
-          <FiChevronLeft />
-          Back
-        </button>
-      </div>
-
-      <div className="min-h-0 flex-1 overflow-y-auto p-5 custom-scrollbar">
-        <div className="rounded-3xl border border-base-300 bg-base-100 shadow-sm">
-          <div className="border-b border-base-300 px-4 py-4">
-            <div className="text-lg font-semibold">{mission.missionName}</div>
-            <div className="mt-1 text-sm text-base-content/60">
-              {mission.deviceName} • {mission.profileLabel || mission.profileType}
-            </div>
-          </div>
-
-          <div className="space-y-4 px-4 py-4">
-            <div className="grid grid-cols-2 gap-3">
-              <div className="rounded-2xl border border-base-300 bg-base-100 px-3 py-3">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-base-content/45">
-                  Status
-                </div>
-                <div className="mt-1.5 text-sm font-semibold">
-                  {mission.status || "Unknown"}
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-base-300 bg-base-100 px-3 py-3">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-base-content/45">
-                  Location mode
-                </div>
-                <div className="mt-1.5 text-sm font-semibold">
-                  {mission.locationMode || "Unknown"}
-                </div>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 gap-3">
-              <div className="rounded-2xl border border-base-300 bg-base-100 px-3 py-3">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-base-content/45">
-                  Started
-                </div>
-                <div className="mt-1.5 text-sm font-semibold">
-                  {formatEpoch(mission.startedAtEpoch)}
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-base-300 bg-base-100 px-3 py-3">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-base-content/45">
-                  Coordinates
-                </div>
-                <div className="mt-1.5 break-all font-mono text-sm font-semibold">
-                  {mission.locationLabel}
-                </div>
-              </div>
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                className={
-                  showTrack
-                    ? "btn btn-sm btn-primary rounded-xl"
-                    : "btn btn-sm btn-outline rounded-xl"
-                }
-                onClick={onToggleTrack}
-              >
-                <FiNavigation />
-                View track
-              </button>
-
-              <button
-                type="button"
-                className={
-                  showHeatmap
-                    ? "btn btn-sm btn-primary rounded-xl"
-                    : "btn btn-sm btn-outline rounded-xl"
-                }
-                onClick={onToggleHeatmap}
-              >
-                <FiMapPin />
-                View heatmap
-              </button>
-            </div>
-
-            {showHeatmap ? (
-              <div className="grid grid-cols-1 gap-3">
-                <label className="form-control">
-                  <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-base-content/45">
-                    Heatmap metric
-                  </div>
-                  <select
-                    className="select select-bordered rounded-xl"
-                    value={heatmapMetric}
-                    onChange={(e) => onHeatmapMetricChange(e.target.value)}
-                  >
-                    <option value="temp_c">Temperature (°C)</option>
-                    <option value="hum_pct">Humidity (%)</option>
-                    <option value="press_hpa">Pressure (hPa)</option>
-                    <option value="gas_ohms">Gas resistance (Ω)</option>
-                  </select>
-                </label>
-
-                <label className="form-control">
-                  <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-base-content/45">
-                    Cell size (m)
-                  </div>
-                  <input
-                    className="input input-bordered rounded-xl"
-                    type="number"
-                    min="2"
-                    step="1"
-                    value={heatmapCellM}
-                    onChange={(e) =>
-                      onHeatmapCellMChange(Number(e.target.value) || 15)
-                    }
-                  />
-                </label>
-              </div>
-            ) : null}
-          </div>
-        </div>
-      </div>
-    </div>
+      <Icon />
+      {label}
+    </button>
   );
 }
 
@@ -435,8 +162,6 @@ export default function HeatMapSidebar({
   errorText = "",
   selectedMission = null,
   selectedMissionId = null,
-  expandedMissionIds = [],
-  onToggleMissionExpand = () => {},
   onSelectMission = () => {},
   onBackToExplorer = () => {},
   showTrack = false,
@@ -452,52 +177,194 @@ export default function HeatMapSidebar({
   const profileMeta = getProfileMeta(profileType);
   const ProfileIcon = profileMeta.Icon;
 
-  const detailsOpen = Boolean(selectedMissionId);
+  const isDetailsMode = Boolean(selectedMission);
 
   return (
-    <div className="h-full overflow-hidden bg-base-100">
-      <div
-        className={`flex h-full w-[200%] transition-transform duration-300 ease-out ${
-          detailsOpen ? "-translate-x-1/2" : "translate-x-0"
-        }`}
-      >
-        {/* Explorer */}
-        <div className="flex h-full w-1/2 min-h-0 flex-col">
-          <div className="border-b border-base-300 px-5 py-5">
-            <div className="flex items-center gap-2">
-              <FiTarget className="text-primary" />
-              <h2 className="text-lg font-semibold">HeatMap explorer</h2>
-            </div>
+    <div className="flex h-full min-h-0 flex-col bg-base-100">
+      <div className="border-b border-base-300 px-5 py-5">
+        <div className="flex items-center gap-2">
+          {isDetailsMode ? (
+            <FiNavigation className="text-primary" />
+          ) : (
+            <FiTarget className="text-primary" />
+          )}
 
-            <p className="mt-1 text-sm text-base-content/60">
-              Filter missions by profile and explore mission locations on the map.
-            </p>
-          </div>
+          <h2 className="text-lg font-semibold">
+            {isDetailsMode ? "Mission details" : "HeatMap explorer"}
+          </h2>
+        </div>
 
-          <div className="flex min-h-0 flex-1 flex-col px-5 py-5">
-            <div className="space-y-4">
-              <div>
-                <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-base-content/45">
-                  Profile filter
+        <p className="mt-1 text-sm text-base-content/60">
+          {isDetailsMode
+            ? "Inspect the selected mission and control the visible layers."
+            : "Filter missions by profile and explore mission locations on the map."}
+        </p>
+      </div>
+
+      <div className="flex min-h-0 flex-1 flex-col px-5 py-5">
+        {isDetailsMode ? (
+          <>
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="truncate text-xl font-semibold text-base-content">
+                  {selectedMission.missionName}
                 </div>
 
-                <div className="flex items-center gap-3">
-                  <ProfileDropdown
-                    profiles={profiles}
-                    value={profileType}
-                    disabled={!hasActiveDevice}
-                    onChange={onProfileChange}
-                  />
+                <div className="mt-1 text-sm text-base-content/60">
+                  {selectedMission.deviceName} •{" "}
+                  {selectedMission.profileLabel || selectedMission.profileType}
+                </div>
+              </div>
 
-                  <div className="min-w-0 rounded-2xl border border-base-300 bg-base-200/50 px-4 py-2.5">
-                    <div className="flex items-center gap-2 text-sm font-semibold text-base-content">
-                      <ProfileIcon className="text-primary" />
-                      {profileMeta.label}
-                    </div>
-                    <div className="mt-0.5 text-xs text-base-content/60">
+              <button
+                type="button"
+                className="btn btn-sm rounded-xl border-base-300 bg-base-100"
+                onClick={onBackToExplorer}
+              >
+                <FiArrowLeft />
+                Back
+              </button>
+            </div>
+
+            <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <DetailTile
+                label="Status"
+                icon={FiActivity}
+                value={
+                  <span className={getStatusBadgeClass(selectedMission.status)}>
+                    {selectedMission.status || "Unknown"}
+                  </span>
+                }
+              />
+
+              <DetailTile
+                label="Location mode"
+                icon={FiMapPin}
+                value={selectedMission.locationMode || "Unknown"}
+              />
+
+              <DetailTile
+                label="Started"
+                icon={FiClock}
+                value={formatEpoch(selectedMission.startedAtEpoch)}
+              />
+
+              <DetailTile
+                label="Coordinates"
+                icon={FiMapPin}
+                value={selectedMission.locationLabel || "—"}
+                mono
+              />
+
+              <DetailTile
+                label="GPS data"
+                icon={FiNavigation}
+                value={selectedMission.hasGps ? "Available" : "Missing"}
+              />
+
+              <DetailTile
+                label="Images"
+                icon={FiImage}
+                value={selectedMission.hasImages ? "Available" : "Missing"}
+              />
+            </div>
+
+            <div className="mt-5 border-t border-base-300 pt-4">
+              <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-base-content/45">
+                <FiActivity />
+                Mission layers
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <LayerToggleButton
+                  active={showTrack}
+                  icon={FiNavigation}
+                  label="View track"
+                  onClick={onToggleTrack}
+                />
+
+                <LayerToggleButton
+                  active={showHeatmap}
+                  icon={FiActivity}
+                  label="View heatmap"
+                  onClick={onToggleHeatmap}
+                />
+
+                <span className="ml-auto inline-flex items-center gap-1 rounded-full border border-base-300 bg-base-200 px-2.5 py-1 text-xs text-base-content/65">
+                  <FiCamera className="text-[12px]" />
+                  {selectedMission.hasImages ? "Camera used" : "No images"}
+                </span>
+              </div>
+            </div>
+
+            {showHeatmap ? (
+              <div className="mt-4 grid grid-cols-1 gap-3 border-t border-base-300 pt-4 md:grid-cols-[minmax(0,1fr)_130px]">
+                <label className="form-control">
+                  <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-base-content/45">
+                    Heatmap metric
+                  </div>
+
+                  <select
+                    className="select select-bordered w-full rounded-2xl"
+                    value={heatmapMetric}
+                    onChange={(e) => onHeatmapMetricChange(e.target.value)}
+                  >
+                    {METRIC_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="form-control">
+                  <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-base-content/45">
+                    Cell size (m)
+                  </div>
+
+                  <input
+                    className="input input-bordered w-full rounded-2xl"
+                    type="number"
+                    min="2"
+                    step="1"
+                    value={heatmapCellM}
+                    onChange={(e) =>
+                      onHeatmapCellMChange(Number(e.target.value) || 15)
+                    }
+                  />
+                </label>
+              </div>
+            ) : null}
+          </>
+        ) : (
+          <>
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-base-300 bg-base-100 px-3 py-3">
+                <div className="flex items-center gap-3">
+                  <div className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-primary/20 bg-primary/8 text-primary">
+                    <ProfileIcon className="text-lg" />
+                  </div>
+
+                  <div className="min-w-0 flex-1">
+                    <select
+                      className="select select-sm select-ghost w-full px-0 text-sm font-semibold"
+                      value={profileType}
+                      onChange={(e) => onProfileChange(e.target.value)}
+                      disabled={!hasActiveDevice}
+                    >
+                      {profiles.map((profile) => (
+                        <option key={profile.type} value={profile.type}>
+                          {profile.label || getProfileMeta(profile.type).label}
+                        </option>
+                      ))}
+                    </select>
+
+                    <div className="mt-0.5 truncate text-xs text-base-content/55">
                       {profileMeta.description}
                     </div>
                   </div>
+
+                  <FiChevronDown className="shrink-0 text-base-content/35" />
                 </div>
               </div>
 
@@ -508,6 +375,7 @@ export default function HeatMapSidebar({
 
                 <div className="flex items-center gap-2 rounded-2xl border border-base-300 bg-base-100 px-3 py-2.5">
                   <FiSearch className="shrink-0 text-base-content/40" />
+
                   <input
                     type="text"
                     value={searchValue}
@@ -520,99 +388,22 @@ export default function HeatMapSidebar({
               </label>
             </div>
 
-            <div className="mt-5 flex min-h-0 flex-1 flex-col overflow-hidden">
-              <div className="mb-3 flex items-center justify-between">
-                <div className="text-sm font-semibold text-base-content">
-                  Device missions
-                </div>
-
-                <span className="badge badge-outline">{missionCount}</span>
-              </div>
-
-              <div className="min-h-0 flex-1 overflow-y-auto pr-1 custom-scrollbar">
-                {!hasActiveDevice ? (
-                  <div className="flex h-full min-h-[260px] items-center justify-center rounded-3xl border border-dashed border-base-300 bg-base-200/40 px-6 text-center text-sm text-base-content/55">
-                    Select a device from the topbar.
-                  </div>
-                ) : loading ? (
-                  <div className="flex h-full min-h-[260px] items-center justify-center rounded-3xl border border-dashed border-base-300 bg-base-200/40 px-6 text-center">
-                    <div>
-                      <div className="loading loading-spinner loading-md text-primary" />
-                      <div className="mt-3 text-sm text-base-content/60">
-                        Loading missions...
-                      </div>
-                    </div>
-                  </div>
-                ) : errorText ? (
-                  <div className="flex h-full min-h-[260px] items-center justify-center rounded-3xl border border-error/30 bg-error/10 px-6 text-center text-sm text-error">
-                    {errorText}
-                  </div>
-                ) : missions.length === 0 ? (
-                  <div className="flex h-full min-h-[260px] items-center justify-center rounded-3xl border border-dashed border-base-300 bg-base-200/40 px-6 text-center text-sm text-base-content/55">
-                    No missions found.
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {missions.map((mission) => (
-                      <MissionListItem
-                        key={mission.missionId}
-                        mission={mission}
-                        selected={mission.missionId === selectedMissionId}
-                        expanded={expandedMissionIds.includes(mission.missionId)}
-                        onSelect={onSelectMission}
-                        onToggleExpand={onToggleMissionExpand}
-                      />
-                    ))}
-                  </div>
-                )}
-              </div>
+            <div className="mt-5 flex items-center justify-between">
+              <div className="text-sm font-semibold">Device missions</div>
+              <span className="badge badge-outline">{missionCount}</span>
             </div>
-          </div>
-        </div>
 
-        {/* Details */}
-        <div className="flex h-full w-1/2 min-h-0 flex-col border-l border-base-300 bg-base-100">
-          {selectedMission ? (
-            <MissionDetailsInline
-              mission={selectedMission}
-              showTrack={showTrack}
-              showHeatmap={showHeatmap}
-              heatmapMetric={heatmapMetric}
-              heatmapCellM={heatmapCellM}
-              onToggleTrack={onToggleTrack}
-              onToggleHeatmap={onToggleHeatmap}
-              onHeatmapMetricChange={onHeatmapMetricChange}
-              onHeatmapCellMChange={onHeatmapCellMChange}
-              onBack={onBackToExplorer}
-            />
-          ) : (
-            <div className="flex h-full min-h-0 flex-col">
-              <div className="flex items-center justify-between border-b border-base-300 px-5 py-4">
-                <div className="min-w-0">
-                  <div className="text-base font-semibold text-base-content">
-                    Mission details
-                  </div>
-                  <div className="mt-1 text-sm text-base-content/60">
-                    Loading mission...
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  className="btn btn-sm rounded-xl border-base-300 bg-base-100"
-                  onClick={onBackToExplorer}
-                >
-                  <FiChevronLeft />
-                  Back
-                </button>
-              </div>
-
-              <div className="flex min-h-0 flex-1 items-center justify-center p-5 text-sm text-base-content/55">
-                Preparing mission details...
-              </div>
+            <div className="mt-4 min-h-0 flex-1">
+              <HeatMapMissionList
+                loading={loading}
+                errorText={errorText}
+                missions={missions}
+                selectedMissionId={selectedMissionId}
+                onSelectMission={onSelectMission}
+              />
             </div>
-          )}
-        </div>
+          </>
+        )}
       </div>
     </div>
   );
