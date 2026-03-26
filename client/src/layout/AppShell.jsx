@@ -192,7 +192,7 @@ export default function AppShell() {
       <div className="drawer lg:drawer-open">
         <input id="envmon-drawer" type="checkbox" className="drawer-toggle" />
 
-        <div className="drawer-content flex flex-col min-h-screen">
+        <div className="drawer-content flex min-h-screen flex-col">
           <Topbar
             pageTitle={pageTitle}
             devices={devices}
@@ -213,8 +213,18 @@ export default function AppShell() {
             </div>
           )}
 
-          <main className="px-4 py-6">
-            <Outlet context={{ selectedDeviceId, activeDevice }} />
+          <main className="flex-1 min-h-0 overflow-hidden px-4 py-6">
+            <Outlet
+              context={{
+                selectedDeviceId,
+                activeDevice,
+                selectedProfileType,
+                profiles,
+                devicesRaw,
+                onDeviceChange: handleDeviceChange,
+                onProfileChange: handleProfileChange,
+              }}
+            />
           </main>
         </div>
 
