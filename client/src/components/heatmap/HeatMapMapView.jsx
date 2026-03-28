@@ -1,19 +1,55 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import maplibregl from "maplibre-gl";
-import "maplibre-gl/dist/maplibre-gl.css";
-import { FiGlobe, FiLayers, FiRotateCcw, FiX } from "react-icons/fi";
+import * as maptilersdk from "@maptiler/sdk";
+import "@maptiler/sdk/dist/maptiler-sdk.css";
+import {
+  FiGlobe,
+  FiLayers,
+  FiMap,
+  FiRotateCcw,
+  FiX,
+  FiRotateCw,
+  FiPause,
+  FiPlay,
+} from "react-icons/fi";
 
 import HeatMapLegend from "./HeatMapLegend";
 
 const MAPTILER_KEY = import.meta.env.VITE_MAPTILER_KEY;
-const STYLE_3D_URL = `https://api.maptiler.com/maps/019d0124-8989-7808-b02b-a8df305b92f3/style.json?key=${MAPTILER_KEY}`;
+
+if (MAPTILER_KEY) {
+  maptilersdk.config.apiKey = MAPTILER_KEY;
+}
+
+const CUSTOM_GLOBE_MAP_ID = "019d0124-8989-7808-b02b-a8df305b92f3";
+const GLOBE_STYLE_URL = `https://api.maptiler.com/maps/${CUSTOM_GLOBE_MAP_ID}/style.json?key=${MAPTILER_KEY}`;
+const TOPO_STYLE_URL = `https://api.maptiler.com/maps/topo-v2/style.json?key=${MAPTILER_KEY}`;
 const TERRAIN_URL = `https://api.maptiler.com/tiles/terrain-rgb-v2/tiles.json?key=${MAPTILER_KEY}`;
 
-const INITIAL_CAMERA = {
-  center: [18, 42],
-  zoom: 1.55,
-  pitch: 68,
-  bearing: -25,
+const CAMERA_PRESETS = {
+  globe3d: {
+    center: [18, 42],
+    zoom: 1.55,
+    pitch: 68,
+    bearing: -25,
+  },
+  globe2d: {
+    center: [18, 42],
+    zoom: 1.55,
+    pitch: 0,
+    bearing: 0,
+  },
+  map2d: {
+    center: [26.255, 47.651],
+    zoom: 12.4,
+    pitch: 0,
+    bearing: 0,
+  },
+  map3d: {
+    center: [26.255, 47.651],
+    zoom: 12.4,
+    pitch: 62,
+    bearing: 0,
+  },
 };
 
 const TRACK_SOURCE_ID = "heatmap-track-source";
@@ -42,14 +78,64 @@ function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
 
-function fitCoords(map, coords) {
-  if (!map || !coords.length) return;
+function getViewKey(viewMode, globePerspective, mapPerspective) {
+  if (viewMode === "globe") {
+    return globePerspective === "2d" ? "globe2d" : "globe3d";
+  }
+  return mapPerspective === "3d" ? "map3d" : "map2d";
+}
+
+function getCameraPreset(viewMode, globePerspective, mapPerspective) {
+  return CAMERA_PRESETS[getViewKey(viewMode, globePerspective, mapPerspective)];
+}
+
+function getFocusCamera(viewMode, globePerspective, mapPerspective) {
+  if (viewMode === "globe") {
+    if (globePerspective === "2d") {
+      return {
+        pitch: 0,
+        bearing: 0,
+        singleZoom: 15.1,
+        padding: 90,
+      };
+    }
+
+    return {
+      pitch: 58,
+      bearing: -18,
+      singleZoom: 15.2,
+      padding: 90,
+    };
+  }
+
+  if (mapPerspective === "3d") {
+    return {
+      pitch: 62,
+      bearing: 0,
+      singleZoom: 15.3,
+      padding: 84,
+    };
+  }
+
+  return {
+    pitch: 0,
+    bearing: 0,
+    singleZoom: 15.1,
+    padding: 84,
+  };
+}
+
+function fitCoords(map, coords, viewMode, globePerspective, mapPerspective) {
+  if (!map || !Array.isArray(coords) || coords.length === 0) return;
+
+  const focus = getFocusCamera(viewMode, globePerspective, mapPerspective);
 
   if (coords.length === 1) {
     map.flyTo({
       center: coords[0],
-      zoom: 15,
-      pitch: 58,
+      zoom: focus.singleZoom,
+      pitch: focus.pitch,
+      bearing: focus.bearing,
       speed: 0.9,
       curve: 1.2,
       essential: true,
@@ -57,13 +143,16 @@ function fitCoords(map, coords) {
     return;
   }
 
-  const bounds = new maplibregl.LngLatBounds(coords[0], coords[0]);
+  const bounds = new maptilersdk.LngLatBounds(coords[0], coords[0]);
   coords.forEach((item) => bounds.extend(item));
 
   map.fitBounds(bounds, {
-    padding: 90,
+    padding: focus.padding,
     duration: 1200,
     essential: true,
+    pitch: focus.pitch,
+    bearing: focus.bearing,
+    maxZoom: 16.2,
   });
 }
 
@@ -94,6 +183,82 @@ function safeRemovePopup(popup) {
   try {
     popup?.remove?.();
   } catch {}
+}
+
+function ensureTerrainSource(map) {
+  if (!map.getSource("terrain-rgb")) {
+    map.addSource("terrain-rgb", {
+      type: "raster-dem",
+      url: TERRAIN_URL,
+      tileSize: 256,
+    });
+  }
+}
+
+function applyBaseScene(map, viewMode, globePerspective, mapPerspective) {
+  if (!map) return;
+
+  const isGlobe = viewMode === "globe";
+
+  try {
+    if (isGlobe && typeof map.enableGlobeProjection === "function") {
+      map.enableGlobeProjection();
+    } else if (!isGlobe && typeof map.enableMercatorProjection === "function") {
+      map.enableMercatorProjection();
+    } else if (typeof map.setProjection === "function") {
+      map.setProjection({ type: isGlobe ? "globe" : "mercator" });
+    }
+  } catch {}
+
+  if (isGlobe) {
+    try {
+      map.dragRotate.enable();
+      map.touchZoomRotate.enableRotation();
+    } catch {}
+
+    if (globePerspective === "3d") {
+      try {
+        ensureTerrainSource(map);
+        if (typeof map.setTerrain === "function") {
+          map.setTerrain({
+            source: "terrain-rgb",
+            exaggeration: 1.08,
+          });
+        }
+      } catch {}
+    } else {
+      try {
+        if (typeof map.setTerrain === "function") {
+          map.setTerrain(null);
+        }
+      } catch {}
+    }
+
+    return;
+  }
+
+  try {
+    map.dragRotate.disable();
+    map.touchZoomRotate.disableRotation();
+  } catch {}
+
+  if (mapPerspective === "3d") {
+    try {
+      ensureTerrainSource(map);
+      if (typeof map.setTerrain === "function") {
+        map.setTerrain({
+          source: "terrain-rgb",
+          exaggeration: 1.25,
+        });
+      }
+    } catch {}
+  } else {
+    try {
+      if (typeof map.setTerrain === "function") {
+        map.setTerrain(null);
+      }
+    } catch {}
+  }
 }
 
 function ensureOverlaySourcesAndLayers(map) {
@@ -389,6 +554,24 @@ function getPopoverPosition(map, pin) {
   }
 }
 
+function ModeButton({ active = false, icon: Icon, label, onClick }) {
+  return (
+    <button
+      type="button"
+      className={[
+        "btn btn-sm rounded-xl shadow-sm",
+        active
+          ? "btn-primary border-none text-white"
+          : "border-base-300 bg-base-100/92 backdrop-blur",
+      ].join(" ")}
+      onClick={onClick}
+    >
+      <Icon />
+      {label}
+    </button>
+  );
+}
+
 export default function HeatMapMapView({
   activeDevice = null,
   selectedDeviceId = "none",
@@ -415,8 +598,12 @@ export default function HeatMapMapView({
   const mapRef = useRef(null);
   const popupRef = useRef(null);
   const markersRef = useRef([]);
+  const [viewMode, setViewMode] = useState("globe"); // globe | map
+  const [globePerspective, setGlobePerspective] = useState("3d"); // 3d | 2d
+  const [mapPerspective, setMapPerspective] = useState("3d"); // 3d | 2d
   const [autoRotate, setAutoRotate] = useState(true);
   const [popoverPosition, setPopoverPosition] = useState(null);
+  const [mapVersion, setMapVersion] = useState(0);
 
   const hasActiveDevice = Boolean(activeDevice && selectedDeviceId !== "none");
   const deviceName = useMemo(
@@ -438,57 +625,55 @@ export default function HeatMapMapView({
   }, [showTrack, showHeatmap]);
 
   useEffect(() => {
+    if (viewMode === "map") {
+      setAutoRotate(false);
+    }
+  }, [viewMode]);
+
+  useEffect(() => {
+    if (viewMode === "globe" && globePerspective === "2d") {
+      setAutoRotate(false);
+    }
+  }, [viewMode, globePerspective]);
+
+  useEffect(() => {
     if (!mapNodeRef.current || !MAPTILER_KEY) return;
 
-    const map = new maplibregl.Map({
+    markersRef.current.forEach((item) => item.remove());
+    markersRef.current = [];
+    safeRemovePopup(popupRef.current);
+    popupRef.current = null;
+
+    const camera = getCameraPreset(viewMode, globePerspective, mapPerspective);
+    const isGlobe = viewMode === "globe";
+    const style = isGlobe ? GLOBE_STYLE_URL : TOPO_STYLE_URL;
+
+    const map = new maptilersdk.Map({
       container: mapNodeRef.current,
-      style: STYLE_3D_URL,
-      center: INITIAL_CAMERA.center,
-      zoom: INITIAL_CAMERA.zoom,
-      pitch: INITIAL_CAMERA.pitch,
-      bearing: INITIAL_CAMERA.bearing,
+      style,
+      center: camera.center,
+      zoom: camera.zoom,
+      pitch: camera.pitch,
+      bearing: camera.bearing,
       antialias: true,
       attributionControl: true,
+      navigationControl: false,
+      geolocateControl: false,
+      projection: isGlobe ? "globe" : "mercator",
+      space: isGlobe ? true : undefined,
     });
 
-    map.addControl(new maplibregl.NavigationControl(), "bottom-right");
+    map.addControl(
+      new maptilersdk.NavigationControl({
+        showCompass: true,
+        showZoom: true,
+        visualizePitch: true,
+      }),
+      "bottom-right",
+    );
 
     map.on("style.load", () => {
-      try {
-        if (typeof map.setProjection === "function") {
-          map.setProjection({ type: "globe" });
-        }
-      } catch {}
-
-      try {
-        if (!map.getSource("terrain-rgb")) {
-          map.addSource("terrain-rgb", {
-            type: "raster-dem",
-            url: TERRAIN_URL,
-            tileSize: 256,
-          });
-        }
-
-        if (typeof map.setTerrain === "function") {
-          map.setTerrain({
-            source: "terrain-rgb",
-            exaggeration: 1.15,
-          });
-        }
-      } catch {}
-
-      try {
-        if (typeof map.setFog === "function") {
-          map.setFog({
-            color: "rgb(255, 255, 255)",
-            "high-color": "rgb(12, 18, 34)",
-            "horizon-blend": 0.14,
-            "space-color": "rgb(5, 10, 24)",
-            "star-intensity": 0.18,
-          });
-        }
-      } catch {}
-
+      applyBaseScene(map, viewMode, globePerspective, mapPerspective);
       ensureOverlaySourcesAndLayers(map);
       updateOverlayLayers(map, {
         showTrack,
@@ -497,10 +682,11 @@ export default function HeatMapMapView({
         trackEndpointsGeoJson,
         heatCellsGeoJson,
       });
+      setMapVersion((prev) => prev + 1);
     });
 
     mapRef.current = map;
-    popupRef.current = new maplibregl.Popup({
+    popupRef.current = new maptilersdk.Popup({
       closeButton: false,
       closeOnClick: false,
       offset: 12,
@@ -510,47 +696,66 @@ export default function HeatMapMapView({
     return () => {
       markersRef.current.forEach((item) => item.remove());
       markersRef.current = [];
-
       safeRemovePopup(popupRef.current);
       popupRef.current = null;
-
       map.remove();
       mapRef.current = null;
     };
-  }, []);
+  }, [viewMode, globePerspective, mapPerspective]);
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map) return;
+    if (!map || viewMode !== "globe") return;
 
     const stopRotation = () => setAutoRotate(false);
 
     map.on("dragstart", stopRotation);
     map.on("zoomstart", stopRotation);
-    map.on("rotatestart", stopRotation);
     map.on("pitchstart", stopRotation);
+    map.on("mousedown", stopRotation);
+    map.on("touchstart", stopRotation);
+    map.on("wheel", stopRotation);
 
     return () => {
       map.off("dragstart", stopRotation);
       map.off("zoomstart", stopRotation);
-      map.off("rotatestart", stopRotation);
       map.off("pitchstart", stopRotation);
+      map.off("mousedown", stopRotation);
+      map.off("touchstart", stopRotation);
+      map.off("wheel", stopRotation);
     };
-  }, []);
+  }, [mapVersion, viewMode]);
 
   useEffect(() => {
-    if (!autoRotate) return;
-    if (!mapRef.current) return;
+    if (
+      viewMode !== "globe" ||
+      globePerspective !== "3d" ||
+      !autoRotate ||
+      !mapRef.current
+    ) {
+      return;
+    }
 
     let frameId = 0;
     let cancelled = false;
+    let lastTs = null;
+    const speedDegPerSecond = 0.6;
 
-    const spin = () => {
+    const spin = (ts) => {
       if (cancelled || !mapRef.current) return;
+
+      if (lastTs == null) {
+        lastTs = ts;
+      }
+
+      const deltaS = Math.min((ts - lastTs) / 1000, 0.05);
+      lastTs = ts;
 
       try {
         const currentBearing = mapRef.current.getBearing();
-        mapRef.current.rotateTo(currentBearing + 0.03, { duration: 0 });
+        mapRef.current.rotateTo(currentBearing + speedDegPerSecond * deltaS, {
+          duration: 0,
+        });
       } catch {}
 
       frameId = window.requestAnimationFrame(spin);
@@ -562,7 +767,7 @@ export default function HeatMapMapView({
       cancelled = true;
       window.cancelAnimationFrame(frameId);
     };
-  }, [autoRotate]);
+  }, [autoRotate, viewMode, globePerspective, mapVersion]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -587,6 +792,7 @@ export default function HeatMapMapView({
       } catch {}
     }
   }, [
+    mapVersion,
     showTrack,
     showHeatmap,
     trackGeoJson,
@@ -672,7 +878,7 @@ export default function HeatMapMapView({
       safeSetCursor(map, "");
       safeRemovePopup(popup);
     };
-  }, [showHeatmap, heatmapMetric]);
+  }, [mapVersion, showHeatmap, heatmapMetric]);
 
   useEffect(() => {
     if (!mapRef.current) return;
@@ -693,7 +899,7 @@ export default function HeatMapMapView({
         onSelectLocationPin(pin.key);
       });
 
-      const marker = new maplibregl.Marker({
+      const marker = new maptilersdk.Marker({
         element: el,
         anchor: "bottom",
       })
@@ -702,7 +908,15 @@ export default function HeatMapMapView({
 
       markersRef.current.push(marker);
     }
-  }, [locationPins, selectedLocationKey, onSelectLocationPin]);
+  }, [
+    mapVersion,
+    locationPins,
+    selectedLocationKey,
+    onSelectLocationPin,
+    viewMode,
+    globePerspective,
+    mapPerspective,
+  ]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -716,7 +930,6 @@ export default function HeatMapMapView({
     };
 
     update();
-
     map.on("move", update);
     map.on("resize", update);
 
@@ -724,17 +937,36 @@ export default function HeatMapMapView({
       map.off("move", update);
       map.off("resize", update);
     };
-  }, [selectedLocationPin]);
+  }, [
+    mapVersion,
+    selectedLocationPin,
+    viewMode,
+    globePerspective,
+    mapPerspective,
+  ]);
 
   useEffect(() => {
     if (!mapRef.current || !selectedLocationPin) return;
     if (selectedMission) return;
     if (showTrack || showHeatmap) return;
 
-    fitCoords(mapRef.current, [
-      [selectedLocationPin.lon, selectedLocationPin.lat],
-    ]);
-  }, [selectedLocationPin, selectedMission, showTrack, showHeatmap]);
+    fitCoords(
+      mapRef.current,
+      [[selectedLocationPin.lon, selectedLocationPin.lat]],
+      viewMode,
+      globePerspective,
+      mapPerspective,
+    );
+  }, [
+    mapVersion,
+    selectedLocationPin,
+    selectedMission,
+    showTrack,
+    showHeatmap,
+    viewMode,
+    globePerspective,
+    mapPerspective,
+  ]);
 
   useEffect(() => {
     if (!mapRef.current || !selectedMission) return;
@@ -744,22 +976,85 @@ export default function HeatMapMapView({
     const lon = selectedMission.start?.lon;
     if (lat == null || lon == null) return;
 
-    fitCoords(mapRef.current, [[lon, lat]]);
-  }, [selectedMission, showTrack, showHeatmap]);
+    fitCoords(
+      mapRef.current,
+      [[lon, lat]],
+      viewMode,
+      globePerspective,
+      mapPerspective,
+    );
+  }, [
+    mapVersion,
+    selectedMission,
+    showTrack,
+    showHeatmap,
+    viewMode,
+    globePerspective,
+    mapPerspective,
+  ]);
 
   useEffect(() => {
     if (!mapRef.current || !showTrack) return;
     if (!trackBounds?.length) return;
 
-    fitCoords(mapRef.current, trackBounds);
-  }, [showTrack, trackBounds]);
+    fitCoords(
+      mapRef.current,
+      trackBounds,
+      viewMode,
+      globePerspective,
+      mapPerspective,
+    );
+  }, [
+    mapVersion,
+    showTrack,
+    trackBounds,
+    viewMode,
+    globePerspective,
+    mapPerspective,
+  ]);
 
   useEffect(() => {
     if (!mapRef.current || !showHeatmap) return;
     if (!heatBounds) return;
 
-    fitCoords(mapRef.current, heatBounds);
-  }, [showHeatmap, heatBounds]);
+    fitCoords(
+      mapRef.current,
+      heatBounds,
+      viewMode,
+      globePerspective,
+      mapPerspective,
+    );
+  }, [
+    mapVersion,
+    showHeatmap,
+    heatBounds,
+    viewMode,
+    globePerspective,
+    mapPerspective,
+  ]);
+
+  function handleReset() {
+    const camera = getCameraPreset(viewMode, globePerspective, mapPerspective);
+
+    onCloseLocationPopover();
+
+    if (viewMode === "globe" && globePerspective === "3d") {
+      setAutoRotate(true);
+    } else {
+      setAutoRotate(false);
+    }
+
+    if (mapRef.current) {
+      mapRef.current.flyTo({
+        center: camera.center,
+        zoom: camera.zoom,
+        pitch: camera.pitch,
+        bearing: camera.bearing,
+        duration: 1400,
+        essential: true,
+      });
+    }
+  }
 
   return (
     <div className="relative h-full min-h-0 w-full overflow-hidden bg-base-200">
@@ -777,67 +1072,84 @@ export default function HeatMapMapView({
         <div ref={mapNodeRef} className="h-full w-full" />
       )}
 
+      {/* ── Top controls bar ── */}
       <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-start justify-between gap-3 p-4">
         <div className="pointer-events-auto flex flex-wrap items-center gap-2">
-          <span className="inline-flex h-9 items-center gap-2 rounded-full border border-base-300 bg-base-100/92 px-3 text-sm font-medium shadow-sm backdrop-blur">
-            <FiGlobe className="text-primary" />
-            Globe view
-          </span>
+          {/* 1. Single Globe ↔ Map toggle button */}
+          <ModeButton
+            active={viewMode === "globe"}
+            icon={viewMode === "globe" ? FiGlobe : FiMap}
+            label={viewMode === "globe" ? "Globe view" : "Map view"}
+            onClick={() => {
+              if (viewMode === "globe") {
+                setViewMode("map");
+                setAutoRotate(false);
+              } else {
+                setViewMode("globe");
+                if (globePerspective === "3d") {
+                  setAutoRotate(true);
+                }
+              }
+            }}
+          />
 
-          <span className="inline-flex h-9 items-center gap-2 rounded-full border border-base-300 bg-base-100/92 px-3 text-sm font-medium shadow-sm backdrop-blur">
+          {/* 2. Perspective toggle — Globe 3D/2D or Map 3D/2D */}
+          {viewMode === "globe" ? (
+            <ModeButton
+              active={globePerspective === "3d"}
+              icon={FiLayers}
+              label={globePerspective === "3d" ? "Globe 3D" : "Globe 2D"}
+              onClick={() => {
+                setGlobePerspective((prev) => (prev === "3d" ? "2d" : "3d"));
+              }}
+            />
+          ) : (
+            <ModeButton
+              active={mapPerspective === "3d"}
+              icon={FiLayers}
+              label={mapPerspective === "3d" ? "Map 3D" : "Map 2D"}
+              onClick={() => {
+                setMapPerspective((prev) => (prev === "3d" ? "2d" : "3d"));
+              }}
+            />
+          )}
+
+          <span className="inline-flex h-8 items-center gap-2 rounded-full border border-base-300 bg-base-100/92 px-3 text-sm font-medium shadow-sm backdrop-blur">
             <FiLayers className="text-primary" />
             {profileLabel}
           </span>
         </div>
 
         <div className="pointer-events-auto flex items-center gap-2">
-          <button
-            type="button"
-            className="btn btn-sm rounded-xl border-base-300 bg-base-100 shadow-sm"
-            onClick={() => setAutoRotate((prev) => !prev)}
-          >
-            {autoRotate ? "Lock rotation" : "Rotate"}
-          </button>
-
-          {selectedLocationPin || selectedMission ? (
+          {/* 3. Rotate icon-only button (no text) */}
+          {viewMode === "globe" ? (
             <button
               type="button"
-              className="btn btn-sm rounded-xl border-base-300 bg-base-100 shadow-sm"
-              onClick={() => {
-                setAutoRotate(false);
-
-                if (mapRef.current) {
-                  mapRef.current.easeTo({
-                    pitch: 0,
-                    bearing: 0,
-                    duration: 900,
-                    essential: true,
-                  });
-                }
-              }}
+              className={[
+                "btn btn-sm btn-square rounded-xl shadow-sm",
+                autoRotate
+                  ? "btn-primary border-none text-white"
+                  : "border-base-300 bg-base-100",
+              ].join(" ")}
+              onClick={() => setAutoRotate((prev) => !prev)}
+              disabled={globePerspective === "2d"}
+              title={
+                globePerspective === "2d"
+                  ? "Rotation is disabled in Globe 2D mode."
+                  : autoRotate
+                    ? "Stop rotation"
+                    : "Start rotation"
+              }
             >
-              Top view
+              {autoRotate ? <FiPause /> : <FiPlay />}
             </button>
           ) : null}
 
           <button
             type="button"
             className="btn btn-sm rounded-xl border-base-300 bg-base-100 shadow-sm"
-            onClick={() => {
-              setAutoRotate(true);
-              onCloseLocationPopover();
-
-              if (mapRef.current) {
-                mapRef.current.flyTo({
-                  center: INITIAL_CAMERA.center,
-                  zoom: INITIAL_CAMERA.zoom,
-                  pitch: INITIAL_CAMERA.pitch,
-                  bearing: INITIAL_CAMERA.bearing,
-                  duration: 1400,
-                  essential: true,
-                });
-              }
-            }}
+            onClick={handleReset}
+            title="Reset view"
           >
             <FiRotateCcw />
             Reset
@@ -845,6 +1157,7 @@ export default function HeatMapMapView({
         </div>
       </div>
 
+      {/* ── Legend (top-right) ── */}
       <div className="pointer-events-none absolute right-4 top-20 z-20 w-[320px] max-w-[calc(100%-2rem)]">
         <div className="pointer-events-auto">
           <HeatMapLegend
@@ -857,6 +1170,7 @@ export default function HeatMapMapView({
         </div>
       </div>
 
+      {/* ── Location popover ── */}
       {selectedLocationPin && popoverPosition ? (
         <div
           className="pointer-events-none absolute z-20"
@@ -928,16 +1242,19 @@ export default function HeatMapMapView({
         </div>
       ) : null}
 
+      {/* 4. HeatMap workspace label — glass effect */}
       {!selectedLocationPin && !selectedMission ? (
         <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 p-4">
-          <div className="pointer-events-auto max-w-md rounded-3xl border border-base-300 bg-base-100/92 px-4 py-3 shadow-sm backdrop-blur">
+          <div className="pointer-events-auto max-w-md glass rounded-3xl border border-white/15 px-4 py-3 shadow-sm">
             <div className="text-sm font-semibold text-base-content">
               HeatMap workspace
             </div>
-            <div className="mt-1 text-sm text-base-content/60">
+            <div className="mt-1 text-sm text-base-content/70">
               {hasActiveDevice
                 ? `Active device: ${deviceName}. Select a location badge to inspect the missions stored at that point.`
-                : "Select a device from the topbar and then choose a location on the globe."}
+                : `Select a device from the topbar and then choose a location on the ${
+                    viewMode === "globe" ? "globe" : "map"
+                  }.`}
             </div>
           </div>
         </div>
