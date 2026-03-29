@@ -110,3 +110,33 @@ def export_mission(mission_id: str):
     except Exception as e:
         return jsonify({"ok": False, "error": f"Device unreachable: {e}"}), 502
     
+
+@missions_bp.patch("/device/missions/<mission_id>")
+def rename_device_mission(mission_id: str):
+    try:
+        payload = request.get_json(silent=True) or {}
+        mission_name = str(payload.get("mission_name") or "").strip()
+
+        if not mission_name:
+            return jsonify({"ok": False, "error": "mission_name required"}), 400
+
+        dc = DeviceClient()
+        r = dc.patch(f"/missions/{mission_id}", {"mission_name": mission_name}, timeout=8)
+        return jsonify(r.json()), r.status_code
+    except DeviceNotSelected as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"Device unreachable: {e}"}), 502
+
+
+@missions_bp.delete("/device/missions/<mission_id>")
+def delete_device_mission(mission_id: str):
+    try:
+        dc = DeviceClient()
+        r = dc.delete(f"/missions/{mission_id}", timeout=10)
+        return jsonify(r.json()), r.status_code
+    except DeviceNotSelected as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"Device unreachable: {e}"}), 502
+    

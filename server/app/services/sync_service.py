@@ -1,8 +1,7 @@
-import time
-from pathlib import Path
 import requests
+from pathlib import Path
 
-from app.services.device_client import DeviceClient, DeviceNotSelected
+from app.services.device_client import DeviceClient
 from app.repositories.missions_repo import MissionsRepo
 from app.services.mission_importer import MissionImporter
 
@@ -29,29 +28,13 @@ class SyncService:
             for chunk in r.iter_content(chunk_size=1024 * 64):
                 if chunk:
                     f.write(chunk)
+
         return out
 
-    def sync_one(self, device_uuid: str, hostname: str | None, base_url: str, mission_id: str) -> dict:
-        zip_path = self._download_zip(base_url, mission_id)
-        res = self.importer.import_zip(device_uuid=device_uuid, hostname=hostname, base_url=base_url, zip_path=zip_path)
-        return {
-            "mission_id": res.mission_id,
-            "mission_name": res.mission_name,
-            "telemetry_rows": res.telemetry_rows,
-            "image_rows": res.image_rows,
-            "has_gps": res.has_gps,
-            "has_images": res.has_images,
-            "start": {"lat": res.start_lat, "lon": res.start_lon, "alt_m": res.start_alt_m},
-        }
-
-    def sync_all_new(self) -> dict:
-        """
-        Uses ACTIVE device (DeviceClient) to list missions and import those missing in DB.
-        """
-        dc = DeviceClient()  # requires active_device_uuid
+    def _read_active_device_info(self) -> tuple[str, str | None, str]:
+        dc = DeviceClient()
         base_url = dc.base_url
 
-        # Read /info to get UUID/hostname safely
         info = {}
         try:
             ri = requests.get(base_url + "/info", timeout=(1, 3))
@@ -66,9 +49,80 @@ class SyncService:
         if not device_uuid:
             raise RuntimeError("Active device did not return device_uuid from /info")
 
-        # List missions on device
+        return device_uuid, hostname, base_url
+
+    def sync_one(
+        self,
+        device_uuid: str,
+        hostname: str | None,
+        base_url: str,
+        mission_id: str,
+    ) -> dict:
+        zip_path = self._download_zip(base_url, mission_id)
+        res = self.importer.import_zip(
+            device_uuid=device_uuid,
+            hostname=hostname,
+            base_url=base_url,
+            zip_path=zip_path,
+        )
+        return {
+            "mission_id": res.mission_id,
+            "mission_name": res.mission_name,
+            "telemetry_rows": res.telemetry_rows,
+            "image_rows": res.image_rows,
+            "has_gps": res.has_gps,
+            "has_images": res.has_images,
+            "start": {
+                "lat": res.start_lat,
+                "lon": res.start_lon,
+                "alt_m": res.start_alt_m,
+            },
+        }
+
+    def sync_selected(self, mission_ids: list[str]) -> dict:
+        device_uuid, hostname, base_url = self._read_active_device_info()
+
+        imported = []
+        skipped = []
+        errors = []
+
+        seen = set()
+        clean_ids = []
+        for mid in mission_ids or []:
+            mid = str(mid or "").strip()
+            if not mid or mid in seen:
+                continue
+            seen.add(mid)
+            clean_ids.append(mid)
+
+        for mid in clean_ids:
+            if self.missions_repo.exists(mid):
+                skipped.append(mid)
+                continue
+
+            try:
+                imported.append(self.sync_one(device_uuid, hostname, base_url, mid))
+            except Exception as e:
+                errors.append({"mission_id": mid, "error": str(e)})
+
+        return {
+            "ok": len(errors) == 0,
+            "requested_count": len(clean_ids),
+            "imported_count": len(imported),
+            "skipped_count": len(skipped),
+            "error_count": len(errors),
+            "imported": imported,
+            "skipped": skipped,
+            "errors": errors,
+        }
+
+    def sync_all_new(self) -> dict:
+        device_uuid, hostname, base_url = self._read_active_device_info()
+
+        dc = DeviceClient(base_url=base_url)
         missions_resp = dc.get("/missions", timeout=8).json()
         mission_ids = missions_resp.get("missions") or []
+
         imported = []
         skipped = []
         errors = []
@@ -77,19 +131,18 @@ class SyncService:
             if self.missions_repo.exists(mid):
                 skipped.append(mid)
                 continue
+
             try:
                 imported.append(self.sync_one(device_uuid, hostname, base_url, mid))
             except Exception as e:
                 errors.append({"mission_id": mid, "error": str(e)})
 
         return {
-            "ok": True,
+            "ok": len(errors) == 0,
             "device_uuid": device_uuid,
-            "hostname": hostname,
-            "base_url": base_url,
             "imported_count": len(imported),
             "skipped_count": len(skipped),
-            "errors_count": len(errors),
+            "error_count": len(errors),
             "imported": imported,
             "skipped": skipped,
             "errors": errors,

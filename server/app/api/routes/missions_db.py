@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import json, os, shutil
+
 from math import cos, radians, floor
-from flask import Blueprint, jsonify, request
-from sqlalchemy import select, func
+from flask import Blueprint, jsonify, request, send_file
+from sqlalchemy import select, func, distinct
 from app.db.session import SessionLocal
-from app.db.models import Mission, TelemetryPoint
+from app.db.models import Mission, TelemetryPoint, MissionImage
 
 missions_db_bp = Blueprint("missions_db", __name__)
 
@@ -276,3 +278,158 @@ def db_heatmap():
                 "cells": cells,
             }
         )
+
+
+@missions_db_bp.get("/db/summary")
+def db_summary():
+    device_uuid = (request.args.get("device_uuid") or "").strip() or None
+
+    with SessionLocal() as db:
+        q_missions = select(func.count()).select_from(Mission)
+        q_devices = select(func.count(distinct(Mission.device_uuid))).select_from(Mission)
+
+        if device_uuid:
+            q_missions = q_missions.where(Mission.device_uuid == device_uuid)
+            q_devices = q_devices.where(Mission.device_uuid == device_uuid)
+
+        mission_count = int(db.execute(q_missions).scalar() or 0)
+        device_count = int(db.execute(q_devices).scalar() or 0)
+
+    return jsonify({
+        "ok": True,
+        "mission_count": mission_count,
+        "device_count": device_count,
+    })
+
+
+@missions_db_bp.get("/db/missions/<mission_id>")
+def db_get_mission(mission_id: str):
+    with SessionLocal() as db:
+        m = db.get(Mission, mission_id)
+        if not m:
+            return jsonify({"ok": False, "error": "Mission not found"}), 404
+
+        telemetry_count = int(
+            db.execute(
+                select(func.count()).select_from(TelemetryPoint).where(TelemetryPoint.mission_id == mission_id)
+            ).scalar() or 0
+        )
+
+        image_count = int(
+            db.execute(
+                select(func.count()).select_from(MissionImage).where(MissionImage.mission_id == mission_id)
+            ).scalar() or 0
+        )
+
+        try:
+            profile = json.loads(m.profile_json or "{}")
+        except Exception:
+            profile = {}
+
+        try:
+            meta = json.loads(m.meta_json or "{}")
+        except Exception:
+            meta = {}
+
+        return jsonify({
+            "ok": True,
+            "item": {
+                "mission_id": m.mission_id,
+                "mission_name": m.mission_name or m.mission_id,
+                "device_uuid": m.device_uuid,
+                "profile_type": m.profile_type,
+                "profile_label": m.profile_label,
+                "created_at_epoch": m.created_at_epoch,
+                "started_at_epoch": m.started_at_epoch,
+                "ended_at_epoch": m.ended_at_epoch,
+                "status": m.status,
+                "stop_reason": m.stop_reason,
+                "location_mode": m.location_mode,
+                "start": {
+                    "lat": m.start_lat,
+                    "lon": m.start_lon,
+                    "alt_m": m.start_alt_m,
+                },
+                "has_gps": bool(m.has_gps),
+                "has_images": bool(m.has_images),
+                "imported_at_epoch": m.imported_at_epoch,
+                "raw_zip_path": m.raw_zip_path,
+                "unpacked_path": m.unpacked_path,
+                "telemetry_count": telemetry_count,
+                "image_count": image_count,
+                "profile": profile,
+                "meta": meta,
+            }
+        })
+
+
+@missions_db_bp.patch("/db/missions/<mission_id>")
+def db_rename_mission(mission_id: str):
+    payload = request.get_json(silent=True) or {}
+    mission_name = str(payload.get("mission_name") or "").strip()
+
+    if not mission_name:
+        return jsonify({"ok": False, "error": "mission_name required"}), 400
+
+    with SessionLocal() as db:
+        m = db.get(Mission, mission_id)
+        if not m:
+            return jsonify({"ok": False, "error": "Mission not found"}), 404
+
+        m.mission_name = mission_name
+        db.commit()
+
+    return jsonify({
+        "ok": True,
+        "mission_id": mission_id,
+        "mission_name": mission_name,
+    })
+
+
+@missions_db_bp.delete("/db/missions/<mission_id>")
+def db_delete_mission(mission_id: str):
+    with SessionLocal() as db:
+        m = db.get(Mission, mission_id)
+        if not m:
+            return jsonify({"ok": False, "error": "Mission not found"}), 404
+
+        raw_zip_path = m.raw_zip_path
+        unpacked_path = m.unpacked_path
+
+        db.delete(m)
+        db.commit()
+
+    if raw_zip_path and os.path.exists(raw_zip_path):
+        try:
+            os.remove(raw_zip_path)
+        except Exception:
+            pass
+
+    if unpacked_path and os.path.exists(unpacked_path):
+        try:
+            shutil.rmtree(unpacked_path, ignore_errors=True)
+        except Exception:
+            pass
+
+    return jsonify({"ok": True, "mission_id": mission_id})
+
+
+@missions_db_bp.get("/db/missions/<mission_id>/export")
+def db_export_mission(mission_id: str):
+    with SessionLocal() as db:
+        m = db.get(Mission, mission_id)
+        if not m:
+            return jsonify({"ok": False, "error": "Mission not found"}), 404
+
+        zip_path = m.raw_zip_path
+
+    if not zip_path or not os.path.exists(zip_path):
+        return jsonify({"ok": False, "error": "ZIP file not found on server"}), 404
+
+    return send_file(
+        zip_path,
+        as_attachment=True,
+        download_name=f"{mission_id}.zip",
+        mimetype="application/zip",
+    )
+    

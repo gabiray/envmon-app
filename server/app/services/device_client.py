@@ -34,14 +34,47 @@ class DeviceClient:
     def get(self, path: str, timeout: float = 5.0) -> requests.Response:
         return requests.get(self._url(path), timeout=timeout)
 
-    def post(self, path: str, payload: dict | None = None, timeout: float = 8.0) -> requests.Response:
+    def post(
+        self,
+        path: str,
+        payload: dict | None = None,
+        timeout: float = 8.0,
+    ) -> requests.Response:
         return requests.post(self._url(path), json=(payload or {}), timeout=timeout)
 
+    def patch(
+        self,
+        path: str,
+        payload: dict | None = None,
+        timeout: float = 8.0,
+    ) -> requests.Response:
+        return requests.patch(self._url(path), json=(payload or {}), timeout=timeout)
 
-# Module-level helpers (compatibility with: from device_client import get, post)
+    def delete(self, path: str, timeout: float = 8.0) -> requests.Response:
+        return requests.delete(self._url(path), timeout=timeout)
+
+
 def get(path: str, timeout: float = 5.0, base_url: str | None = None) -> requests.Response:
     return DeviceClient(base_url=base_url).get(path, timeout=timeout)
 
 
-def post(path: str, payload: dict | None = None, timeout: float = 8.0, base_url: str | None = None) -> requests.Response:
+def post(
+    path: str,
+    payload: dict | None = None,
+    timeout: float = 8.0,
+    base_url: str | None = None,
+) -> requests.Response:
     return DeviceClient(base_url=base_url).post(path, payload=payload, timeout=timeout)
+
+
+def patch(
+    path: str,
+    payload: dict | None = None,
+    timeout: float = 8.0,
+    base_url: str | None = None,
+) -> requests.Response:
+    return DeviceClient(base_url=base_url).patch(path, payload=payload, timeout=timeout)
+
+
+def delete(path: str, timeout: float = 8.0, base_url: str | None = None) -> requests.Response:
+    return DeviceClient(base_url=base_url).delete(path, timeout=timeout)
