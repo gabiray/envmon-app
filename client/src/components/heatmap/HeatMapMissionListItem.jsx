@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef } from "react";
 import {
   FiCamera,
   FiChevronDown,
@@ -28,24 +28,26 @@ function getStatusBadge(status) {
 export default function HeatMapMissionListItem({
   mission,
   selected = false,
+  expanded = false,
+  onToggleExpand = () => {},
   onSelect = () => {},
 }) {
-  const [expanded, setExpanded] = useState(false);
   const rootRef = useRef(null);
+
+  useEffect(() => {
+    if (!expanded) return;
+
+    requestAnimationFrame(() => {
+      rootRef.current?.scrollIntoView({
+        block: "start",
+        behavior: "smooth",
+      });
+    });
+  }, [expanded]);
 
   function handleToggleExpand(e) {
     e.stopPropagation();
-    const next = !expanded;
-    setExpanded(next);
-
-    if (next) {
-      requestAnimationFrame(() => {
-        rootRef.current?.scrollIntoView({
-          block: "start",
-          behavior: "smooth",
-        });
-      });
-    }
+    onToggleExpand(mission.missionId);
   }
 
   return (

@@ -6,6 +6,8 @@ export default function HeatMapMissionList({
   errorText = "",
   missions = [],
   selectedMissionId = null,
+  expandedMissionIds = [],
+  onToggleMissionExpand = () => {},
   onSelectMission = () => {},
 }) {
   if (loading) {
@@ -50,6 +52,8 @@ export default function HeatMapMissionList({
             key={mission.missionId}
             mission={mission}
             selected={mission.missionId === selectedMissionId}
+            expanded={expandedMissionIds.includes(mission.missionId)}
+            onToggleExpand={() => onToggleMissionExpand(mission.missionId)}
             onSelect={onSelectMission}
           />
         ))}

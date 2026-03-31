@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { useOutletContext } from "react-router-dom";
+import { useOutletContext, useSearchParams } from "react-router-dom";
 
 import HeatMapLayout from "../components/heatmap/HeatMapLayout";
 import HeatMapSidebar from "../components/heatmap/HeatMapSidebar";
@@ -17,6 +17,10 @@ export default function HeatMap() {
     onDeviceChange,
     onProfileChange,
   } = useOutletContext();
+
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const requestedMissionId = (searchParams.get("missionId") || "").trim();
 
   const [profileType, setProfileType] = useState(
     selectedProfileType || "drone",
@@ -75,6 +79,39 @@ export default function HeatMap() {
     heatmapCellM,
   });
 
+  useEffect(() => {
+    if (!requestedMissionId || !Array.isArray(devicesRaw) || devicesRaw.length === 0) {
+      return;
+    }
+
+    const missionOwner = devicesRaw.find((device) => {
+      const ids = device?.missions || [];
+      return Array.isArray(ids) && ids.includes(requestedMissionId);
+    });
+
+    if (
+      missionOwner?.device_uuid &&
+      missionOwner.device_uuid !== selectedDeviceId
+    ) {
+      onDeviceChange(missionOwner.device_uuid);
+    }
+  }, [requestedMissionId, devicesRaw, selectedDeviceId, onDeviceChange]);
+
+  useEffect(() => {
+    if (!requestedMissionId || loading) return;
+    if (!missionMap.has(requestedMissionId)) return;
+
+    setSelectedMissionId(requestedMissionId);
+    setSelectedLocationKey(null);
+    setVisibleLayers({
+      track: true,
+      heatmap: true,
+    });
+    setExpandedMissionIds((prev) =>
+      prev.includes(requestedMissionId) ? prev : [...prev, requestedMissionId],
+    );
+  }, [requestedMissionId, loading, missionMap]);
+
   function handleProfileSelect(nextType) {
     setProfileType(nextType);
     setSelectedMissionId(null);
@@ -84,6 +121,10 @@ export default function HeatMap() {
 
     if (activeDevice) {
       onProfileChange(nextType);
+    }
+
+    if (requestedMissionId) {
+      setSearchParams({}, { replace: true });
     }
   }
 
@@ -102,9 +143,13 @@ export default function HeatMap() {
   async function handleSelectMission(mission) {
     if (!mission) return;
 
-    // deschide imediat details
     setSelectedMissionId(mission.missionId);
     setSelectedLocationKey(null);
+
+    setSearchParams(
+      { missionId: mission.missionId },
+      { replace: true },
+    );
 
     if (mission.deviceUuid && mission.deviceUuid !== selectedDeviceId) {
       await onDeviceChange(mission.deviceUuid);
@@ -113,6 +158,12 @@ export default function HeatMap() {
 
   function handleBackToExplorer() {
     setSelectedMissionId(null);
+    setVisibleLayers({ track: false, heatmap: false });
+    setSelectedLocationKey(null);
+
+    if (requestedMissionId) {
+      setSearchParams({}, { replace: true });
+    }
   }
 
   function handleCloseLocationPopover() {
@@ -137,6 +188,8 @@ export default function HeatMap() {
             errorText={errorText}
             selectedMission={selectedMission}
             selectedMissionId={selectedMissionId}
+            expandedMissionIds={expandedMissionIds}
+            onToggleMissionExpand={handleToggleMissionExpand}
             onSelectMission={handleSelectMission}
             onBackToExplorer={handleBackToExplorer}
             showTrack={visibleLayers.track}

@@ -251,6 +251,8 @@ export default function HeatMapSidebar({
   errorText = "",
   selectedMission = null,
   selectedMissionId = null,
+  expandedMissionIds = [],
+  onToggleMissionExpand = () => {},
   onSelectMission = () => {},
   onBackToExplorer = () => {},
   showTrack = false,
@@ -454,7 +456,9 @@ export default function HeatMapSidebar({
                     <DetailTile
                       label="Images"
                       icon={FiImage}
-                      value={selectedMission.hasImages ? "Available" : "Missing"}
+                      value={
+                        selectedMission.hasImages ? "Available" : "Missing"
+                      }
                     />
                   </div>
                 </div>
@@ -512,6 +516,8 @@ export default function HeatMapSidebar({
                 errorText={errorText}
                 missions={missions}
                 selectedMissionId={selectedMissionId}
+                expandedMissionIds={expandedMissionIds}
+                onToggleMissionExpand={onToggleMissionExpand}
                 onSelectMission={onSelectMission}
               />
             </div>
