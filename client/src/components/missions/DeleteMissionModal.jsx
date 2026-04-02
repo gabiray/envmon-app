@@ -110,7 +110,7 @@ export default function DeleteMissionModal({
                 <input
                   type="radio"
                   name="delete-mode"
-                  className="radio radio-sm mt-0.5"
+                  className="radio radio-mdmt-0.5"
                   checked={mode === option.value}
                   onChange={() => setMode(option.value)}
                 />

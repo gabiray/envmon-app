@@ -1,13 +1,13 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useOutletContext } from "react-router-dom";
-import { FiPlus } from "react-icons/fi";
 
-import MissionsTabs from "../components/missions/MissionsTabs";
-import MissionsStats from "../components/missions/MissionsStats";
 import MissionsToolbar from "../components/missions/MissionsToolbar";
 import MissionsTable from "../components/missions/MissionsTable";
-import MissionDetailsModal from "../components/missions/MissionDetailsModal";
+import DeleteMissionModal from "../components/missions/DeleteMissionModal";
+import MissionsOverviewPanel from "../components/missions/MissionsOverviewPanel";
+import MissionsTablePanel from "../components/missions/MissionsTablePanel";
 
+import { useDeviceConnection } from "../hooks/useDeviceConnection";
 import {
   fetchDbSummary,
   fetchDbMissions,
@@ -15,12 +15,11 @@ import {
   fetchDeviceMissions,
   deleteDbMission,
   deleteDeviceMission,
-  downloadDbMissionZip,
-  downloadDeviceMissionZip,
-  importNewMissions,
   renameDbMission,
   renameDeviceMission,
 } from "../services/missionsApi";
+
+// ─── Helpers ────────────────────────────────────────────────────────────────
 
 function getProfileLabel(profileType, profiles = []) {
   const found = profiles.find((item) => item.type === profileType);
@@ -55,18 +54,15 @@ function normalizeDbMission(mission, profiles) {
     mission_name: mission.mission_name || mission.mission_id,
     device_uuid: mission.device_uuid || null,
     profile_type: mission.profile_type || null,
-    profile_label:
-      mission.profile_label || getProfileLabel(mission.profile_type, profiles),
+    profile_label: mission.profile_label || getProfileLabel(mission.profile_type, profiles),
     location_label: inferLocationLabel(mission),
     date_epoch: getMissionDateEpoch(mission),
+    status: mission.status || "Unknown",
     source: "db",
     in_db: true,
     on_device: false,
     has_gps: Boolean(mission.has_gps),
     has_images: Boolean(mission.has_images),
-    location_mode: mission.location_mode || null,
-    status: mission.status || null,
-    imported_at_epoch: mission.imported_at_epoch || null,
     raw: mission,
   };
 }
@@ -80,90 +76,103 @@ function normalizeDeviceMission(missionId, meta = {}, activeDevice, profiles) {
     profile_label:
       meta.profile_label ||
       activeDevice?.active_profile_label ||
-      getProfileLabel(
-        meta.profile_type || activeDevice?.active_profile_type,
-        profiles,
-      ),
+      getProfileLabel(meta.profile_type, profiles),
     location_label: inferLocationLabel(meta),
     date_epoch: getMissionDateEpoch(meta),
+    status: meta.status || meta.stop_reason || "Unknown",
     source: "device",
     in_db: false,
     on_device: true,
     has_gps: Boolean(meta.has_gps),
     has_images: Boolean(meta.has_images),
-    location_mode: meta.location_mode || null,
-    status: meta.status || null,
-    imported_at_epoch: null,
-    raw: meta,
+    raw: {
+      mission_id: missionId,
+      ...meta,
+    },
   };
 }
 
-function mergeMissionSources(dbRows, deviceRows) {
+function mergeMissionSources(dbRows = [], deviceRows = []) {
   const map = new Map();
 
-  for (const item of dbRows) {
-    map.set(item.mission_id, { ...item });
+  for (const mission of dbRows) {
+    map.set(mission.mission_id, { ...mission });
   }
 
-  for (const item of deviceRows) {
-    const existing = map.get(item.mission_id);
+  for (const mission of deviceRows) {
+    if (map.has(mission.mission_id)) {
+      const prev = map.get(mission.mission_id);
 
-    if (!existing) {
-      map.set(item.mission_id, { ...item });
-      continue;
+      map.set(mission.mission_id, {
+        ...prev,
+        ...mission,
+        mission_name: prev.mission_name || mission.mission_name,
+        source: "synced",
+        in_db: true,
+        on_device: true,
+        raw: {
+          ...(prev.raw || {}),
+          ...(mission.raw || {}),
+        },
+      });
+    } else {
+      map.set(mission.mission_id, { ...mission });
     }
-
-    map.set(item.mission_id, {
-      ...existing,
-      on_device: true,
-      source: "synced",
-      profile_type: existing.profile_type || item.profile_type,
-      profile_label: existing.profile_label || item.profile_label,
-      location_label:
-        existing.location_label && existing.location_label !== "Unknown"
-          ? existing.location_label
-          : item.location_label,
-      has_gps: existing.has_gps || item.has_gps,
-      has_images: existing.has_images || item.has_images,
-    });
   }
 
   return Array.from(map.values());
 }
 
+// ─── Page ───────────────────────────────────────────────────────────────────
+
 export default function Missions() {
   const navigate = useNavigate();
-  const { selectedDeviceId, activeDevice, profiles, devicesRaw } =
-    useOutletContext();
+  const outlet = useOutletContext() || {};
+
+  const {
+    setPageTitle,
+    activeDevice = null,
+    selectedDeviceId = "none",
+    onDeviceChange = async () => {},
+    profiles = [],
+    devicesRaw = [],
+  } = outlet;
+
+  const { deviceConnected = false } = useDeviceConnection(selectedDeviceId);
 
   const [activeTab, setActiveTab] = useState("db");
 
-  const [summary, setSummary] = useState({
-    mission_count: 0,
-    device_count: 0,
-  });
-
+  // ── Data state ────────────────────────────────────────────────────────────
+  const [summary, setSummary] = useState({ mission_count: 0, device_count: 0 });
   const [dbRows, setDbRows] = useState([]);
   const [deviceRows, setDeviceRows] = useState([]);
-
   const [loading, setLoading] = useState(true);
   const [tableBusy, setTableBusy] = useState(false);
-  const [detailsLoading, setDetailsLoading] = useState(false);
 
+  // ── Details state ─────────────────────────────────────────────────────────
+  const [selectedMissionId, setSelectedMissionId] = useState(null);
+  const [, setSelectedMissionDetails] = useState(null);
+  const [, setDetailsLoading] = useState(false);
+
+  // ── Toolbar / filter state ────────────────────────────────────────────────
   const [searchValue, setSearchValue] = useState("");
-  const [selectedDeviceFilter, setSelectedDeviceFilter] = useState("all");
   const [selectedProfileFilter, setSelectedProfileFilter] = useState("all");
-  const [selectedLocationFilter, setSelectedLocationFilter] = useState("all");
+  const [selectedDeviceFilter, setSelectedDeviceFilter] = useState("all");
+  const [selectedLocationIds, setSelectedLocationIds] = useState([]);
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [sortBy, setSortBy] = useState("date_desc");
+  const [selectedIds, setSelectedIds] = useState([]);
 
-  const [selectedMissionId, setSelectedMissionId] = useState(null);
-  const [selectedMissionIds, setSelectedMissionIds] = useState([]);
-  const [detailsOpen, setDetailsOpen] = useState(false);
-  const [selectedMissionDetails, setSelectedMissionDetails] = useState(null);
+  // ── Delete modal ──────────────────────────────────────────────────────────
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [missionToDelete, setMissionToDelete] = useState(null);
 
-  const deviceTabDisabled = !activeDevice || selectedDeviceId === "none";
+  const deviceTabDisabled = !deviceConnected || !activeDevice;
+
+  useEffect(() => {
+    setPageTitle?.("Missions");
+  }, [setPageTitle]);
 
   useEffect(() => {
     if (deviceTabDisabled && activeTab === "device") {
@@ -171,7 +180,8 @@ export default function Missions() {
     }
   }, [deviceTabDisabled, activeTab]);
 
-  async function loadPage() {
+  // ── Load data ─────────────────────────────────────────────────────────────
+  const loadPage = useCallback(async () => {
     setLoading(true);
 
     try {
@@ -195,16 +205,16 @@ export default function Missions() {
           const ids = Array.isArray(deviceRes?.missions) ? deviceRes.missions : [];
           const metaMap = deviceRes?.missions_meta || {};
 
-          const normalized = ids.map((missionId) =>
-            normalizeDeviceMission(
-              missionId,
-              metaMap?.[missionId] || {},
-              activeDevice,
-              profiles,
+          setDeviceRows(
+            ids.map((mid) =>
+              normalizeDeviceMission(
+                mid,
+                metaMap?.[mid] || {},
+                activeDevice,
+                profiles,
+              ),
             ),
           );
-
-          setDeviceRows(normalized);
         } catch {
           setDeviceRows([]);
         }
@@ -214,13 +224,13 @@ export default function Missions() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [profiles, activeDevice, deviceTabDisabled]);
 
   useEffect(() => {
     loadPage();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedDeviceId]);
+  }, [loadPage]);
 
+  // ── Derived data ──────────────────────────────────────────────────────────
   const mergedRows = useMemo(
     () => mergeMissionSources(dbRows, deviceRows),
     [dbRows, deviceRows],
@@ -228,62 +238,104 @@ export default function Missions() {
 
   const baseRows = useMemo(() => {
     if (activeTab === "device") {
-      return mergedRows.filter((item) => item.on_device);
+      return mergedRows.filter((m) => m.on_device);
     }
 
-    return mergedRows.filter((item) => item.in_db);
+    return mergedRows.filter((m) => m.in_db);
   }, [activeTab, mergedRows]);
 
-  const locationOptions = useMemo(() => {
-    return Array.from(
+  const pendingImportCount = useMemo(
+    () => mergedRows.filter((m) => m.on_device && !m.in_db).length,
+    [mergedRows],
+  );
+
+  const distinctLocationCount = useMemo(
+    () =>
       new Set(
         mergedRows
-          .map((item) => item.location_label)
-          .filter((value) => value && value !== "Unknown"),
-      ),
-    ).sort((a, b) => a.localeCompare(b));
+          .map((m) => m.location_label)
+          .filter((v) => v && v !== "Unknown"),
+      ).size,
+    [mergedRows],
+  );
+
+  const locationOptions = useMemo(() => {
+    const map = new Map();
+
+    for (const mission of mergedRows) {
+      const raw = mission?.raw || {};
+      const lat = raw?.start?.lat;
+      const lon = raw?.start?.lon;
+
+      if (lat == null || lon == null) continue;
+      if (!mission.location_label || mission.location_label === "Unknown") continue;
+
+      const key = `${Number(lat).toFixed(4)}_${Number(lon).toFixed(4)}`;
+
+      if (!map.has(key)) {
+        map.set(key, {
+          id: key,
+          name: mission.location_label,
+          latlng: {
+            lat: Number(lat),
+            lng: Number(lon),
+          },
+        });
+      }
+    }
+
+    return Array.from(map.values());
   }, [mergedRows]);
 
   const filteredRows = useMemo(() => {
     const q = searchValue.trim().toLowerCase();
-
     let rows = [...baseRows];
 
     if (selectedDeviceFilter !== "all") {
-      rows = rows.filter((item) => item.device_uuid === selectedDeviceFilter);
+      rows = rows.filter((m) => m.device_uuid === selectedDeviceFilter);
     }
 
     if (selectedProfileFilter !== "all") {
-      rows = rows.filter((item) => item.profile_type === selectedProfileFilter);
-    }
-
-    if (selectedLocationFilter !== "all") {
-      rows = rows.filter((item) => item.location_label === selectedLocationFilter);
+      rows = rows.filter((m) => m.profile_type === selectedProfileFilter);
     }
 
     if (startDate) {
-      const startEpoch = new Date(`${startDate}T00:00:00`).getTime();
-      rows = rows.filter(
-        (item) => item.date_epoch && item.date_epoch * 1000 >= startEpoch,
-      );
+      const epoch = new Date(`${startDate}T00:00:00`).getTime();
+      rows = rows.filter((m) => m.date_epoch && m.date_epoch * 1000 >= epoch);
     }
 
     if (endDate) {
-      const endEpoch = new Date(`${endDate}T23:59:59`).getTime();
-      rows = rows.filter(
-        (item) => item.date_epoch && item.date_epoch * 1000 <= endEpoch,
-      );
+      const epoch = new Date(`${endDate}T23:59:59`).getTime();
+      rows = rows.filter((m) => m.date_epoch && m.date_epoch * 1000 <= epoch);
+    }
+
+    if (selectedLocationIds.length > 0) {
+      rows = rows.filter((m) => {
+        const raw = m?.raw || {};
+        const lat = raw?.start?.lat;
+        const lon = raw?.start?.lon;
+
+        if (lat == null || lon == null) return false;
+
+        const key = `${Number(lat).toFixed(4)}_${Number(lon).toFixed(4)}`;
+        return selectedLocationIds.includes(key);
+      });
     }
 
     if (q) {
-      rows = rows.filter((item) => {
-        return (
-          String(item.mission_name).toLowerCase().includes(q) ||
-          String(item.mission_id).toLowerCase().includes(q) ||
-          String(item.profile_label).toLowerCase().includes(q) ||
-          String(item.location_label).toLowerCase().includes(q)
-        );
-      });
+      rows = rows.filter((m) =>
+        [
+          m.mission_name,
+          m.mission_id,
+          m.profile_label,
+          m.location_label,
+          m.device_uuid,
+          m.status,
+        ]
+          .join(" ")
+          .toLowerCase()
+          .includes(q),
+      );
     }
 
     rows.sort((a, b) => {
@@ -308,32 +360,28 @@ export default function Missions() {
     searchValue,
     selectedDeviceFilter,
     selectedProfileFilter,
-    selectedLocationFilter,
+    selectedLocationIds,
     startDate,
     endDate,
     sortBy,
   ]);
 
-  const selectedMission = useMemo(() => {
-    return mergedRows.find((item) => item.mission_id === selectedMissionId) || null;
-  }, [mergedRows, selectedMissionId]);
+  useEffect(() => {
+    setSelectedIds((prev) =>
+      prev.filter((id) => filteredRows.some((row) => row.mission_id === id)),
+    );
+  }, [filteredRows]);
 
-  const pendingImportCount = useMemo(() => {
-    return mergedRows.filter((item) => item.on_device && !item.in_db).length;
-  }, [mergedRows]);
+  useEffect(() => {
+    setSelectedMissionId((prev) =>
+      prev && filteredRows.some((row) => row.mission_id === prev) ? prev : null,
+    );
+  }, [filteredRows]);
 
-  const distinctLocationCount = useMemo(() => {
-    return new Set(
-      mergedRows
-        .map((item) => item.location_label)
-        .filter((value) => value && value !== "Unknown"),
-    ).size;
-  }, [mergedRows]);
-
+  // ── Actions ───────────────────────────────────────────────────────────────
   async function handleOpenDetails(mission) {
     setSelectedMissionId(mission.mission_id);
     setSelectedMissionDetails(null);
-    setDetailsOpen(true);
 
     if (!mission.in_db) return;
 
@@ -348,40 +396,6 @@ export default function Missions() {
     }
   }
 
-  function handleToggleSelect(missionId) {
-    setSelectedMissionIds((prev) =>
-      prev.includes(missionId)
-        ? prev.filter((item) => item !== missionId)
-        : [...prev, missionId],
-    );
-  }
-
-  function handleToggleSelectAll(visibleRows) {
-    const visibleIds = visibleRows.map((item) => item.mission_id);
-
-    setSelectedMissionIds((prev) => {
-      const allVisibleSelected = visibleIds.every((id) => prev.includes(id));
-
-      if (allVisibleSelected) {
-        return prev.filter((id) => !visibleIds.includes(id));
-      }
-
-      return Array.from(new Set([...prev, ...visibleIds]));
-    });
-  }
-
-  function handleClearSelection() {
-    setSelectedMissionIds([]);
-  }
-
-  function handleOpenAnalyticsForSelected() {
-    if (selectedMissionIds.length === 0) return;
-
-    const params = new URLSearchParams();
-    params.set("missionIds", selectedMissionIds.join(","));
-    navigate(`/analytics?${params.toString()}`);
-  }
-
   async function handleRename(mission) {
     if (!mission) return;
 
@@ -391,6 +405,7 @@ export default function Missions() {
     if (!trimmed || trimmed === mission.mission_name) return;
 
     setTableBusy(true);
+
     try {
       if (mission.source === "synced") {
         await Promise.allSettled([
@@ -403,176 +418,155 @@ export default function Missions() {
         await renameDbMission(mission.mission_id, trimmed);
       }
 
-      if (selectedMissionId === mission.mission_id && selectedMissionDetails) {
-        setSelectedMissionDetails((prev) =>
-          prev ? { ...prev, mission_name: trimmed } : prev,
-        );
-      }
-
       await loadPage();
-    } catch (error) {
-      console.error("Rename failed", error);
     } finally {
       setTableBusy(false);
     }
   }
 
-  async function handleDownload(mission) {
+  function handleDeleteRequest(mission) {
     if (!mission) return;
-
-    try {
-      if (mission.in_db) {
-        await downloadDbMissionZip(mission.mission_id);
-        return;
-      }
-
-      if (mission.on_device) {
-        await downloadDeviceMissionZip(mission.mission_id);
-      }
-    } catch (error) {
-      console.error("Download failed", error);
-    }
+    setMissionToDelete(mission);
+    setDeleteModalOpen(true);
   }
 
-  async function handleDelete(mission) {
-    if (!mission) return;
-
-    const confirmed = window.confirm(
-      mission.source === "synced"
-        ? "Delete this mission from both database and device?"
-        : mission.source === "device"
-          ? "Delete this mission from device?"
-          : "Delete this mission from database?",
-    );
-
-    if (!confirmed) return;
+  async function handleConfirmDelete(mode) {
+    if (!missionToDelete || !mode) return;
 
     setTableBusy(true);
 
     try {
-      if (mission.source === "synced") {
-        await deleteDeviceMission(mission.mission_id);
-        await deleteDbMission(mission.mission_id);
-      } else if (mission.source === "device") {
-        await deleteDeviceMission(mission.mission_id);
+      if (mode === "both") {
+        await Promise.allSettled([
+          deleteDbMission(missionToDelete.mission_id),
+          deleteDeviceMission(missionToDelete.mission_id),
+        ]);
+      } else if (mode === "device") {
+        await deleteDeviceMission(missionToDelete.mission_id);
       } else {
-        await deleteDbMission(mission.mission_id);
+        await deleteDbMission(missionToDelete.mission_id);
       }
 
-      setSelectedMissionIds((prev) =>
-        prev.filter((item) => item !== mission.mission_id),
+      setSelectedIds((prev) =>
+        prev.filter((id) => id !== missionToDelete.mission_id),
       );
 
-      if (selectedMissionId === mission.mission_id) {
+      if (selectedMissionId === missionToDelete.mission_id) {
         setSelectedMissionId(null);
         setSelectedMissionDetails(null);
-        setDetailsOpen(false);
       }
 
+      setDeleteModalOpen(false);
+      setMissionToDelete(null);
+
       await loadPage();
-    } catch (error) {
-      console.error("Delete failed", error);
     } finally {
       setTableBusy(false);
     }
   }
 
-  async function handleImportNew() {
-    setTableBusy(true);
+  function handleToggleSelect(missionId) {
+    setSelectedIds((prev) =>
+      prev.includes(missionId)
+        ? prev.filter((id) => id !== missionId)
+        : [...prev, missionId],
+    );
+  }
 
-    try {
-      await importNewMissions();
-      await loadPage();
-    } catch (error) {
-      console.error("Import failed", error);
-    } finally {
-      setTableBusy(false);
+  function handleToggleSelectAll() {
+    const visibleIds = filteredRows.map((row) => row.mission_id);
+    const allSelected =
+      visibleIds.length > 0 && visibleIds.every((id) => selectedIds.includes(id));
+
+    if (allSelected) {
+      setSelectedIds((prev) => prev.filter((id) => !visibleIds.includes(id)));
+      return;
     }
+
+    setSelectedIds((prev) => Array.from(new Set([...prev, ...visibleIds])));
   }
 
   return (
-    <>
-      <div className="flex h-full flex-col gap-5">
-        <section className="space-y-5">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <MissionsTabs
-              activeTab={activeTab}
-              onChange={setActiveTab}
-              deviceDisabled={deviceTabDisabled}
+    <div className="flex h-full flex-col gap-5">
+      <div className="flex flex-col gap-6">
+        <MissionsOverviewPanel
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
+          deviceDisabled={deviceTabDisabled}
+          deviceConnected={deviceConnected}
+          deviceLabel={activeDevice?.nickname || "Device"}
+          summary={summary}
+          pendingImportCount={pendingImportCount}
+          distinctLocationCount={distinctLocationCount}
+        />
+
+        <MissionsTablePanel
+          title={activeTab === "db" ? "Database missions" : "Device missions"}
+          description={
+            activeTab === "db"
+              ? "Review stored missions, open analytics and manage imported records."
+              : "Inspect missions detected on the selected device and prepare imports."
+          }
+          toolbar={
+            <MissionsToolbar
+              devicesRaw={devicesRaw}
+              selectedDeviceId={selectedDeviceFilter}
+              onDeviceChange={setSelectedDeviceFilter}
+              profiles={profiles}
+              selectedProfileFilter={selectedProfileFilter}
+              onProfileFilterChange={setSelectedProfileFilter}
+              locationOptions={locationOptions}
+              selectedLocationIds={selectedLocationIds}
+              onSelectedLocationIdsChange={setSelectedLocationIds}
+              searchValue={searchValue}
+              onSearchChange={setSearchValue}
+              sortBy={sortBy}
+              onSortChange={setSortBy}
+              startDate={startDate}
+              onStartDateChange={setStartDate}
+              endDate={endDate}
+              onEndDateChange={setEndDate}
             />
-
-            <button
-              type="button"
-              className="btn btn-md btn-primary rounded-xl px-4"
-              onClick={handleImportNew}
-              disabled={tableBusy || deviceTabDisabled}
-            >
-              <FiPlus className="text-base" />
-              Import new
-            </button>
-          </div>
-
-          <MissionsStats
-            summary={summary}
-            pendingImportCount={pendingImportCount}
-            distinctLocationCount={distinctLocationCount}
-          />
-
-          <MissionsToolbar
-            devicesRaw={devicesRaw}
-            profiles={profiles}
-            searchValue={searchValue}
-            onSearchChange={setSearchValue}
-            selectedDeviceFilter={selectedDeviceFilter}
-            onDeviceFilterChange={setSelectedDeviceFilter}
-            selectedProfileFilter={selectedProfileFilter}
-            onProfileFilterChange={setSelectedProfileFilter}
-            selectedLocationFilter={selectedLocationFilter}
-            onLocationFilterChange={setSelectedLocationFilter}
-            startDate={startDate}
-            onStartDateChange={setStartDate}
-            endDate={endDate}
-            onEndDateChange={setEndDate}
-            locationOptions={locationOptions}
-            sortBy={sortBy}
-            onSortChange={setSortBy}
-          />
-
+          }
+        >
           <MissionsTable
             loading={loading || tableBusy}
             rows={filteredRows}
-            selectedIds={selectedMissionIds}
+            selectedIds={selectedIds}
+            selectedMissionId={selectedMissionId}
+            sortBy={sortBy}
+            onSortChange={setSortBy}
+            deviceConnected={deviceConnected}
             onToggleSelect={handleToggleSelect}
             onToggleSelectAll={handleToggleSelectAll}
-            onClearSelection={handleClearSelection}
-            onOpenAnalyticsForSelected={handleOpenAnalyticsForSelected}
+            onClearSelection={() => setSelectedIds([])}
+            onOpenAnalyticsForSelected={() => {
+              if (!selectedIds.length) return;
+              navigate(`/analytics?missionIds=${selectedIds.join(",")}`);
+            }}
             onOpenDetails={handleOpenDetails}
+            onOpenHeatmap={(m) => navigate(`/heatmap?missionId=${m.mission_id}`)}
+            onOpenAnalytics={(m) =>
+              navigate(`/analytics?missionId=${m.mission_id}`)
+            }
             onRename={handleRename}
-            onDelete={handleDelete}
+            onDelete={handleDeleteRequest}
           />
-        </section>
+        </MissionsTablePanel>
       </div>
 
-      <MissionDetailsModal
-        open={detailsOpen}
-        mission={selectedMission}
-        details={selectedMissionDetails}
-        loading={detailsLoading}
-        profiles={profiles}
+      <DeleteMissionModal
+        open={deleteModalOpen}
+        mission={missionToDelete}
+        deviceConnected={deviceConnected}
+        busy={tableBusy}
         onClose={() => {
-          setDetailsOpen(false);
-          setSelectedMissionDetails(null);
+          if (tableBusy) return;
+          setDeleteModalOpen(false);
+          setMissionToDelete(null);
         }}
-        onOpenHeatmap={() => {
-          if (!selectedMission) return;
-          navigate(`/heatmap?missionId=${selectedMission.mission_id}`);
-        }}
-        onOpenAnalytics={() => {
-          if (!selectedMission) return;
-          navigate(`/analytics?missionId=${selectedMission.mission_id}`);
-        }}
-        onDownload={() => handleDownload(selectedMission)}
+        onConfirm={handleConfirmDelete}
       />
-    </>
+    </div>
   );
 }
