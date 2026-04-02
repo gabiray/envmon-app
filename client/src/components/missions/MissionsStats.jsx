@@ -20,7 +20,9 @@ function StatCard({ label, value, hint, icon, tone = "blue" }) {
             {label}
           </div>
           {/* Dimensiunea textului a fost redusa de la 3xl la 2xl */}
-          <div className="mt-1 text-2xl font-bold text-base-content">{value}</div>
+          <div className="mt-1 text-2xl font-bold text-base-content">
+            {value}
+          </div>
           {hint ? (
             <div className="mt-1 text-xs text-base-content/50">{hint}</div>
           ) : null}
@@ -28,7 +30,7 @@ function StatCard({ label, value, hint, icon, tone = "blue" }) {
 
         {/* Iconita a fost micsorata si are designul de accent */}
         <div
-          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${iconStyle}`}
+          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${iconStyle} ring-1 ring-inset ring-white/20`}
         >
           {icon}
         </div>
@@ -44,7 +46,9 @@ export default function MissionsStats({
   className = "",
 }) {
   return (
-    <section className={`grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4 ${className}`}>
+    <section
+      className={`grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4 ${className}`}
+    >
       <StatCard
         label="Database missions"
         value={summary?.mission_count ?? 0}
