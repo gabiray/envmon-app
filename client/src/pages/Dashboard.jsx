@@ -67,6 +67,7 @@ export default function Dashboard() {
   const [deviceMissionsData, setDeviceMissionsData] = useState({
     missions: [],
     incomplete_missions: [],
+    missions_meta: {},
   });
   const [dbMissions, setDbMissions] = useState([]);
   const [missionsLoading, setMissionsLoading] = useState(false);
@@ -123,6 +124,7 @@ export default function Dashboard() {
       setDeviceMissionsData({
         missions: deviceRes?.missions || [],
         incomplete_missions: deviceRes?.incomplete_missions || [],
+        missions_meta: deviceRes?.missions_meta || {},
       });
 
       setDbMissions(Array.isArray(dbRes) ? dbRes : []);
@@ -140,22 +142,32 @@ export default function Dashboard() {
 
   const missionRows = useMemo(() => {
     const dbMap = new Map((dbMissions || []).map((m) => [m.mission_id, m]));
+    const metaMap = deviceMissionsData.missions_meta || {};
 
     return (deviceMissionsData.missions || []).map((missionId) => {
       const dbMission = dbMap.get(missionId);
+      const deviceMeta = metaMap[missionId] || {};
 
       return {
         mission_id: missionId,
-        mission_name: dbMission?.mission_name || missionId,
-        started_at_epoch: dbMission?.started_at_epoch ?? null,
+        mission_name:
+          dbMission?.mission_name || deviceMeta?.mission_name || missionId,
+        started_at_epoch:
+          dbMission?.started_at_epoch ?? deviceMeta?.started_at_epoch ?? null,
         profile_type:
-          dbMission?.profile_type || activeDevice?.active_profile_type,
+          dbMission?.profile_type ||
+          deviceMeta?.profile_type ||
+          activeDevice?.active_profile_type,
+        profile_label:
+          dbMission?.profile_label ||
+          deviceMeta?.profile_label ||
+          activeDevice?.active_profile_label,
         has_gps: Boolean(dbMission?.has_gps),
         has_images: Boolean(dbMission?.has_images),
         imported: Boolean(dbMission),
       };
     });
-  }, [deviceMissionsData.missions, dbMissions, activeDevice]);
+  }, [deviceMissionsData, dbMissions, activeDevice]);
 
   const filteredMissionRows = useMemo(() => {
     const q = missionSearch.trim().toLowerCase();

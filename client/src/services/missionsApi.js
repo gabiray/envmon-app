@@ -2,7 +2,9 @@ import api from "./api";
 
 function buildParams(params = {}) {
   return Object.fromEntries(
-    Object.entries(params).filter(([, value]) => value !== undefined && value !== null && value !== "")
+    Object.entries(params).filter(
+      ([, value]) => value !== undefined && value !== null && value !== "",
+    ),
   );
 }
 
@@ -25,6 +27,8 @@ function toMissionListItem(item) {
     status: item.status ?? null,
     stop_reason: item.stop_reason ?? null,
     location_mode: item.location_mode ?? null,
+    start_point_id: item.start_point_id ?? null,
+    location_name: item.location_name ?? null,
     start: item.start
       ? {
           lat: item.start.lat ?? null,
@@ -56,6 +60,8 @@ function toDbMissionDetails(item) {
     status: item.status ?? null,
     stop_reason: item.stop_reason ?? null,
     location_mode: item.location_mode ?? null,
+    start_point_id: item.start_point_id ?? null,
+    location_name: item.location_name ?? null,
     start: item.start
       ? {
           lat: item.start.lat ?? null,

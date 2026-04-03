@@ -25,6 +25,10 @@ class Mission(Base):
     meta_json = Column(Text, nullable=False)
 
     location_mode = Column(String, nullable=True)
+    
+    start_point_id = Column(String, nullable=True, index=True)
+    location_name = Column(String, nullable=True, index=True)
+    
     start_lat = Column(Float, nullable=True)
     start_lon = Column(Float, nullable=True)
     start_alt_m = Column(Float, nullable=True)

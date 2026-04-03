@@ -8,6 +8,7 @@ import {
   FiMap,
   FiMoreVertical,
   FiTrash2,
+  FiDownload,
 } from "react-icons/fi";
 
 function formatDate(epoch) {
@@ -58,7 +59,9 @@ function StatusText({ status }) {
             : status || "Unknown";
 
   return (
-    <span className={`text-sm font-medium ${map[key] || "text-base-content/65"}`}>
+    <span
+      className={`text-sm font-medium ${map[key] || "text-base-content/65"}`}
+    >
       {label}
     </span>
   );
@@ -73,12 +76,16 @@ function SourceText({ source }) {
 
   const meta = map[source] || map.db;
 
-  return <span className={`text-sm font-medium ${meta.cls}`}>{meta.label}</span>;
+  return (
+    <span className={`text-sm font-medium ${meta.cls}`}>{meta.label}</span>
+  );
 }
 
 function getLocationDisplay(mission) {
   const explicitLabel =
-    typeof mission.location_label === "string" ? mission.location_label.trim() : "";
+    typeof mission.location_label === "string"
+      ? mission.location_label.trim()
+      : "";
 
   const lat = mission?.raw?.start?.lat ?? null;
   const lon = mission?.raw?.start?.lon ?? null;
@@ -101,9 +108,9 @@ function getLocationDisplay(mission) {
   }
 
   const locationMode =
-    mission.location_mode === "fixed"
+    mission?.raw?.location_mode === "fixed"
       ? "Fixed point"
-      : mission.location_mode === "gps"
+      : mission?.raw?.location_mode === "gps"
         ? "GPS location"
         : "Unknown location";
 
@@ -159,6 +166,10 @@ export default function MissionsTable({
   onOpenAnalytics = () => {},
   onRename = () => {},
   onDelete = () => {},
+  onImport = () => {},
+  onImportNew = () => {},
+  onImportSelected = () => {},
+  activeTab = "db",
   className = "",
 }) {
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
@@ -168,24 +179,45 @@ export default function MissionsTable({
   const someVisibleSelected =
     rows.some((row) => selectedSet.has(row.mission_id)) && !allVisibleSelected;
 
+  const selectedImportableRows = rows.filter(
+    (row) => selectedSet.has(row.mission_id) && row.on_device && !row.in_db,
+  );
+
+  const selectedAnalyzableRows = rows.filter(
+    (row) => selectedSet.has(row.mission_id) && row.in_db,
+  );
+
   return (
     <div
       className={`relative rounded-[18px] border border-base-300 bg-base-100 shadow-sm ${className}`}
     >
       {selectedIds.length > 0 && (
-        <div className="flex items-center justify-between gap-3 border-b border-base-300 bg-primary/5 px-5 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-base-300 bg-primary/5 px-5 py-3">
           <span className="text-sm font-medium text-primary">
-            {selectedIds.length} mission{selectedIds.length > 1 ? "s" : ""} selected
+            {selectedIds.length} mission{selectedIds.length > 1 ? "s" : ""}{" "}
+            selected
           </span>
 
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              className="btn btn-primary btn-sm rounded-xl px-4"
-              onClick={onOpenAnalyticsForSelected}
-            >
-              Open Analytics
-            </button>
+          <div className="flex flex-wrap items-center gap-2">
+            {selectedAnalyzableRows.length > 0 ? (
+              <button
+                type="button"
+                className="btn btn-primary btn-sm rounded-xl px-4"
+                onClick={onOpenAnalyticsForSelected}
+              >
+                Open Analytics
+              </button>
+            ) : null}
+
+            {activeTab === "device" && selectedImportableRows.length > 0 ? (
+              <button
+                type="button"
+                className="btn btn-sm rounded-xl border border-base-300 bg-base-100 px-4 hover:bg-base-200"
+                onClick={onImportSelected}
+              >
+                Import selected
+              </button>
+            ) : null}
 
             <button
               type="button"
@@ -198,8 +230,21 @@ export default function MissionsTable({
         </div>
       )}
 
-      <div className="overflow-x-auto overflow-y-visible min-h-fit custom-scrollbar">
-        <table className="w-full min-w-[980px] table-fixed">
+      {activeTab === "device" && (
+        <div className="flex items-center justify-end gap-2 border-b border-base-200 px-5 py-3">
+          <button
+            type="button"
+            className="btn btn-sm btn-primary rounded-xl relative"
+            onClick={onImportNew}
+          >
+            <FiDownload />
+            Import new
+          </button>
+        </div>
+      )}
+
+      <div className="custom-scrollbar min-h-fit overflow-x-auto overflow-y-visible">
+        <table className="table-fixed min-w-[980px] w-full">
           <thead>
             <tr className="border-b border-base-300 bg-base-300/45">
               <th className="w-12 px-4 py-4">
@@ -289,7 +334,13 @@ export default function MissionsTable({
               rows.map((mission) => {
                 const isChecked = selectedSet.has(mission.mission_id);
                 const isSelected = mission.mission_id === selectedMissionId;
-                const { locationLabel, coordsLabel } = getLocationDisplay(mission);
+                const { locationLabel, coordsLabel } =
+                  getLocationDisplay(mission);
+
+                const canAnalyze = mission.in_db;
+                const canOpenHeatmap = mission.in_db;
+                const canRename = mission.in_db;
+                const canImport = mission.on_device && !mission.in_db;
 
                 return (
                   <tr
@@ -382,7 +433,7 @@ export default function MissionsTable({
 
                         <ul
                           tabIndex={0}
-                          className="dropdown-content menu z-[90] mt-2 w-44 rounded-2xl border border-base-300 bg-base-100 p-1.5 shadow-2xl"
+                          className="dropdown-content menu z-[90] mt-2 w-48 rounded-2xl border border-base-300 bg-base-100 p-1.5 shadow-2xl"
                         >
                           <li>
                             <button
@@ -394,35 +445,52 @@ export default function MissionsTable({
                             </button>
                           </li>
 
-                          <li>
-                            <button
-                              className="rounded-xl py-2 text-sm"
-                              onClick={() => onOpenHeatmap(mission)}
-                            >
-                              <FiMap className="text-base-content/60" />
-                              Open HeatMap
-                            </button>
-                          </li>
+                          {canOpenHeatmap ? (
+                            <li>
+                              <button
+                                className="rounded-xl py-2 text-sm"
+                                onClick={() => onOpenHeatmap(mission)}
+                              >
+                                <FiMap className="text-base-content/60" />
+                                Open HeatMap
+                              </button>
+                            </li>
+                          ) : null}
 
-                          <li>
-                            <button
-                              className="rounded-xl py-2 text-sm"
-                              onClick={() => onOpenAnalytics(mission)}
-                            >
-                              <FiBarChart2 className="text-base-content/60" />
-                              Analytics
-                            </button>
-                          </li>
+                          {canAnalyze ? (
+                            <li>
+                              <button
+                                className="rounded-xl py-2 text-sm"
+                                onClick={() => onOpenAnalytics(mission)}
+                              >
+                                <FiBarChart2 className="text-base-content/60" />
+                                Analytics
+                              </button>
+                            </li>
+                          ) : null}
 
-                          <li>
-                            <button
-                              className="rounded-xl py-2 text-sm"
-                              onClick={() => onRename(mission)}
-                            >
-                              <FiEdit2 className="text-base-content/60" />
-                              Rename
-                            </button>
-                          </li>
+                          {canRename ? (
+                            <li>
+                              <button
+                                className="rounded-xl py-2 text-sm"
+                                onClick={() => onRename(mission)}
+                              >
+                                <FiEdit2 className="text-base-content/60" />
+                                Rename
+                              </button>
+                            </li>
+                          ) : null}
+
+                          {canImport ? (
+                            <li>
+                              <button
+                                className="rounded-xl py-2 text-sm"
+                                onClick={() => onImport(mission)}
+                              >
+                                Import
+                              </button>
+                            </li>
+                          ) : null}
 
                           <li className="mt-1 border-t border-base-200 pt-1">
                             <button
@@ -433,18 +501,6 @@ export default function MissionsTable({
                               Delete
                             </button>
                           </li>
-
-                          {mission.on_device && deviceConnected && (
-                            <li>
-                              <button
-                                className="rounded-xl py-2 text-sm text-error/80 hover:bg-error/8"
-                                onClick={() => onDelete(mission)}
-                              >
-                                <FiTrash2 />
-                                Delete from device
-                              </button>
-                            </li>
-                          )}
                         </ul>
                       </div>
                     </td>
@@ -460,7 +516,9 @@ export default function MissionsTable({
         <div className="border-t border-base-200 px-5 py-3 text-xs font-medium text-base-content/40">
           {rows.length} mission{rows.length !== 1 ? "s" : ""}
           {selectedIds.length > 0 && (
-            <span className="ml-2 text-primary">| {selectedIds.length} selected</span>
+            <span className="ml-2 text-primary">
+              | {selectedIds.length} selected
+            </span>
           )}
         </div>
       )}

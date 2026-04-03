@@ -1,16 +1,18 @@
 from __future__ import annotations
 
-import json, os, shutil
-
+import json
+import os
+import shutil
 from math import cos, radians, floor
+
 from flask import Blueprint, jsonify, request, send_file
 from sqlalchemy import select, func, distinct
+
 from app.db.session import SessionLocal
 from app.db.models import Mission, TelemetryPoint, MissionImage
 
 missions_db_bp = Blueprint("missions_db", __name__)
 
-# Allowed metrics for heatmap aggregation
 _ALLOWED_METRICS = {
     "temp_c": TelemetryPoint.temp_c,
     "hum_pct": TelemetryPoint.hum_pct,
@@ -54,6 +56,8 @@ def db_list_missions():
                     "status": m.status,
                     "stop_reason": m.stop_reason,
                     "location_mode": m.location_mode,
+                    "start_point_id": m.start_point_id,
+                    "location_name": m.location_name,
                     "start": {
                         "lat": m.start_lat,
                         "lon": m.start_lon,
@@ -70,9 +74,6 @@ def db_list_missions():
 
 @missions_db_bp.get("/db/missions/<mission_id>/track")
 def db_mission_track(mission_id: str):
-    """
-    Returns GPS points for map polylines.
-    """
     with SessionLocal() as db:
         rows = db.execute(
             select(
@@ -97,9 +98,6 @@ def db_mission_track(mission_id: str):
 
 @missions_db_bp.get("/db/missions/<mission_id>/stats")
 def db_mission_stats(mission_id: str):
-    """
-    Simple aggregates for Analytics charts.
-    """
     with SessionLocal() as db:
         agg = db.execute(
             select(
@@ -133,15 +131,6 @@ def db_mission_stats(mission_id: str):
 
 @missions_db_bp.get("/db/heatmap")
 def db_heatmap():
-    """
-    Builds a grid heatmap for a mission using telemetry points.
-
-    Query:
-      - mission_id (required)
-      - metric: temp_c|hum_pct|press_hpa|gas_ohms (default temp_c)
-      - cell_m: grid resolution in meters (default 15)
-      - min_lat/min_lon/max_lat/max_lon (optional bbox)
-    """
     mission_id = (request.args.get("mission_id") or "").strip()
     if not mission_id:
         return jsonify({"ok": False, "error": "mission_id is required"}), 400
@@ -165,7 +154,6 @@ def db_heatmap():
     metric_col = _ALLOWED_METRICS[metric_key]
 
     with SessionLocal() as db:
-        # If bbox not provided, compute it from points for this mission + metric
         if None in (min_lat, min_lon, max_lat, max_lon):
             ext = db.execute(
                 select(
@@ -199,7 +187,6 @@ def db_heatmap():
             max_lat = float(ext[2]) if max_lat is None else max_lat
             max_lon = float(ext[3]) if max_lon is None else max_lon
 
-            # Small padding so edge points still fall inside the grid
             pad = 0.0003
             min_lat -= pad
             min_lon -= pad
@@ -213,7 +200,6 @@ def db_heatmap():
         dlat = cell_m / meters_per_deg_lat
         dlon = cell_m / meters_per_deg_lon
 
-        # Fetch points inside bbox
         rows = db.execute(
             select(TelemetryPoint.lat, TelemetryPoint.lon, metric_col)
             .where(TelemetryPoint.mission_id == mission_id)
@@ -226,7 +212,6 @@ def db_heatmap():
             .where(TelemetryPoint.lon <= max_lon)
         ).all()
 
-        # Aggregate per cell (i, j)
         agg: dict[tuple[int, int], tuple[float, int]] = {}
         for lat, lon, val in rows:
             i = int(floor((float(lat) - min_lat) / dlat))
@@ -345,6 +330,8 @@ def db_get_mission(mission_id: str):
                 "status": m.status,
                 "stop_reason": m.stop_reason,
                 "location_mode": m.location_mode,
+                "start_point_id": m.start_point_id,
+                "location_name": m.location_name,
                 "start": {
                     "lat": m.start_lat,
                     "lon": m.start_lon,

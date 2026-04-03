@@ -17,6 +17,8 @@ import {
   deleteDeviceMission,
   renameDbMission,
   renameDeviceMission,
+  importNewMissions,
+  importSelectedMissions,
 } from "../services/missionsApi";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -27,6 +29,15 @@ function getProfileLabel(profileType, profiles = []) {
 }
 
 function inferLocationLabel(mission) {
+  const explicitName =
+    typeof mission?.location_name === "string"
+      ? mission.location_name.trim()
+      : "";
+
+  if (explicitName) {
+    return explicitName;
+  }
+
   const start = mission?.start || null;
 
   if (start?.lat != null && start?.lon != null) {
@@ -54,7 +65,8 @@ function normalizeDbMission(mission, profiles) {
     mission_name: mission.mission_name || mission.mission_id,
     device_uuid: mission.device_uuid || null,
     profile_type: mission.profile_type || null,
-    profile_label: mission.profile_label || getProfileLabel(mission.profile_type, profiles),
+    profile_label:
+      mission.profile_label || getProfileLabel(mission.profile_type, profiles),
     location_label: inferLocationLabel(mission),
     date_epoch: getMissionDateEpoch(mission),
     status: mission.status || "Unknown",
@@ -72,7 +84,8 @@ function normalizeDeviceMission(missionId, meta = {}, activeDevice, profiles) {
     mission_id: missionId,
     mission_name: meta.mission_name || missionId,
     device_uuid: activeDevice?.device_uuid || null,
-    profile_type: meta.profile_type || activeDevice?.active_profile_type || null,
+    profile_type:
+      meta.profile_type || activeDevice?.active_profile_type || null,
     profile_label:
       meta.profile_label ||
       activeDevice?.active_profile_label ||
@@ -107,6 +120,14 @@ function mergeMissionSources(dbRows = [], deviceRows = []) {
         ...prev,
         ...mission,
         mission_name: prev.mission_name || mission.mission_name,
+        profile_type: prev.profile_type || mission.profile_type,
+        profile_label: prev.profile_label || mission.profile_label,
+        location_label:
+          prev.location_label && prev.location_label !== "Unknown"
+            ? prev.location_label
+            : mission.location_label,
+        date_epoch: prev.date_epoch || mission.date_epoch,
+        status: prev.status || mission.status,
         source: "synced",
         in_db: true,
         on_device: true,
@@ -138,7 +159,9 @@ export default function Missions() {
     devicesRaw = [],
   } = outlet;
 
-  const { deviceConnected = false } = useDeviceConnection(selectedDeviceId);
+  const { uiStatus = "inactive" } = useDeviceConnection(selectedDeviceId);
+
+  const deviceConnected = uiStatus === "connected";
 
   const [activeTab, setActiveTab] = useState("db");
 
@@ -168,11 +191,38 @@ export default function Missions() {
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [missionToDelete, setMissionToDelete] = useState(null);
 
-  const deviceTabDisabled = !deviceConnected || !activeDevice;
+  // Device selection logic:
+  // filter has priority; fallback to topbar selected device
+  const effectiveDeviceId =
+    selectedDeviceFilter !== "all"
+      ? selectedDeviceFilter
+      : selectedDeviceId !== "none"
+        ? selectedDeviceId
+        : null;
+
+  // Active device detection should compare with selectedDeviceId from topbar
+  const isEffectiveDeviceActive =
+    Boolean(effectiveDeviceId) &&
+    selectedDeviceId !== "none" &&
+    effectiveDeviceId === selectedDeviceId;
+
+  const canReadLiveDeviceMissions = isEffectiveDeviceActive && deviceConnected;
+
+  // Device tab disabled only when no device is selected anywhere
+  const deviceTabDisabled = !effectiveDeviceId;
 
   useEffect(() => {
     setPageTitle?.("Missions");
   }, [setPageTitle]);
+
+  // Sync topbar -> local filter
+  useEffect(() => {
+    if (selectedDeviceId && selectedDeviceId !== "none") {
+      setSelectedDeviceFilter(selectedDeviceId);
+    } else {
+      setSelectedDeviceFilter("all");
+    }
+  }, [selectedDeviceId]);
 
   useEffect(() => {
     if (deviceTabDisabled && activeTab === "device") {
@@ -185,9 +235,12 @@ export default function Missions() {
     setLoading(true);
 
     try {
+      const dbDeviceUuid =
+        activeTab === "device" ? effectiveDeviceId : undefined;
+
       const [dbSummary, dbMissions] = await Promise.all([
-        fetchDbSummary(),
-        fetchDbMissions(),
+        fetchDbSummary(dbDeviceUuid),
+        fetchDbMissions(dbDeviceUuid),
       ]);
 
       setSummary({
@@ -199,10 +252,12 @@ export default function Missions() {
         (dbMissions || []).map((item) => normalizeDbMission(item, profiles)),
       );
 
-      if (!deviceTabDisabled) {
+      if (canReadLiveDeviceMissions) {
         try {
           const deviceRes = await fetchDeviceMissions();
-          const ids = Array.isArray(deviceRes?.missions) ? deviceRes.missions : [];
+          const ids = Array.isArray(deviceRes?.missions)
+            ? deviceRes.missions
+            : [];
           const metaMap = deviceRes?.missions_meta || {};
 
           setDeviceRows(
@@ -224,13 +279,31 @@ export default function Missions() {
     } finally {
       setLoading(false);
     }
-  }, [profiles, activeDevice, deviceTabDisabled]);
+  }, [
+    activeTab,
+    effectiveDeviceId,
+    canReadLiveDeviceMissions,
+    activeDevice,
+    profiles,
+  ]);
 
   useEffect(() => {
     loadPage();
   }, [loadPage]);
 
+  useEffect(() => {
+    if (activeTab !== "device") return;
+    if (deviceTabDisabled) return;
+
+    loadPage();
+  }, [activeTab, deviceTabDisabled, loadPage]);
+
   // ── Derived data ──────────────────────────────────────────────────────────
+  const deviceTabRows = useMemo(
+    () => mergeMissionSources(dbRows, deviceRows),
+    [dbRows, deviceRows],
+  );
+
   const mergedRows = useMemo(
     () => mergeMissionSources(dbRows, deviceRows),
     [dbRows, deviceRows],
@@ -238,37 +311,39 @@ export default function Missions() {
 
   const baseRows = useMemo(() => {
     if (activeTab === "device") {
-      return mergedRows.filter((m) => m.on_device);
+      return deviceTabRows;
     }
 
-    return mergedRows.filter((m) => m.in_db);
-  }, [activeTab, mergedRows]);
+    return dbRows;
+  }, [activeTab, deviceTabRows, dbRows]);
 
   const pendingImportCount = useMemo(
-    () => mergedRows.filter((m) => m.on_device && !m.in_db).length,
-    [mergedRows],
+    () => deviceTabRows.filter((m) => m.on_device && !m.in_db).length,
+    [deviceTabRows],
   );
 
   const distinctLocationCount = useMemo(
     () =>
       new Set(
-        mergedRows
+        baseRows
           .map((m) => m.location_label)
           .filter((v) => v && v !== "Unknown"),
       ).size,
-    [mergedRows],
+    [baseRows],
   );
 
   const locationOptions = useMemo(() => {
     const map = new Map();
 
-    for (const mission of mergedRows) {
+    for (const mission of baseRows) {
       const raw = mission?.raw || {};
       const lat = raw?.start?.lat;
       const lon = raw?.start?.lon;
 
       if (lat == null || lon == null) continue;
-      if (!mission.location_label || mission.location_label === "Unknown") continue;
+      if (!mission.location_label || mission.location_label === "Unknown") {
+        continue;
+      }
 
       const key = `${Number(lat).toFixed(4)}_${Number(lon).toFixed(4)}`;
 
@@ -285,13 +360,15 @@ export default function Missions() {
     }
 
     return Array.from(map.values());
-  }, [mergedRows]);
+  }, [baseRows]);
 
   const filteredRows = useMemo(() => {
     const q = searchValue.trim().toLowerCase();
     let rows = [...baseRows];
 
-    if (selectedDeviceFilter !== "all") {
+    // Database tab ignores selected device
+    // Device tab respects selected device
+    if (activeTab === "device" && selectedDeviceFilter !== "all") {
       rows = rows.filter((m) => m.device_uuid === selectedDeviceFilter);
     }
 
@@ -356,6 +433,7 @@ export default function Missions() {
 
     return rows;
   }, [
+    activeTab,
     baseRows,
     searchValue,
     selectedDeviceFilter,
@@ -399,7 +477,10 @@ export default function Missions() {
   async function handleRename(mission) {
     if (!mission) return;
 
-    const nextName = window.prompt("Rename mission", mission.mission_name || "");
+    const nextName = window.prompt(
+      "Rename mission",
+      mission.mission_name || "",
+    );
     const trimmed = String(nextName || "").trim();
 
     if (!trimmed || trimmed === mission.mission_name) return;
@@ -418,6 +499,45 @@ export default function Missions() {
         await renameDbMission(mission.mission_id, trimmed);
       }
 
+      await loadPage();
+    } finally {
+      setTableBusy(false);
+    }
+  }
+
+  async function handleImportMission(mission) {
+    if (!mission || mission.in_db) return;
+
+    setTableBusy(true);
+    try {
+      await importSelectedMissions([mission.mission_id]);
+      await loadPage();
+    } finally {
+      setTableBusy(false);
+    }
+  }
+
+  async function handleImportSelected() {
+    const importableIds = filteredRows
+      .filter((m) => selectedIds.includes(m.mission_id))
+      .filter((m) => m.on_device && !m.in_db)
+      .map((m) => m.mission_id);
+
+    if (!importableIds.length) return;
+
+    setTableBusy(true);
+    try {
+      await importSelectedMissions(importableIds);
+      await loadPage();
+    } finally {
+      setTableBusy(false);
+    }
+  }
+
+  async function handleImportNew() {
+    setTableBusy(true);
+    try {
+      await importNewMissions();
       await loadPage();
     } finally {
       setTableBusy(false);
@@ -476,7 +596,8 @@ export default function Missions() {
   function handleToggleSelectAll() {
     const visibleIds = filteredRows.map((row) => row.mission_id);
     const allSelected =
-      visibleIds.length > 0 && visibleIds.every((id) => selectedIds.includes(id));
+      visibleIds.length > 0 &&
+      visibleIds.every((id) => selectedIds.includes(id));
 
     if (allSelected) {
       setSelectedIds((prev) => prev.filter((id) => !visibleIds.includes(id)));
@@ -486,6 +607,30 @@ export default function Missions() {
     setSelectedIds((prev) => Array.from(new Set([...prev, ...visibleIds])));
   }
 
+  async function handleDeviceFilterChange(nextDeviceId) {
+    setSelectedDeviceFilter(nextDeviceId);
+
+    const normalized =
+      nextDeviceId && nextDeviceId !== "all" ? nextDeviceId : "none";
+
+    if (normalized !== selectedDeviceId) {
+      try {
+        await onDeviceChange(normalized);
+      } catch {
+        // keep local filter even if topbar sync fails
+      }
+    }
+  }
+
+  const deviceTabLabel =
+    selectedDeviceFilter !== "all"
+      ? devicesRaw.find((d) => d.device_uuid === selectedDeviceFilter)
+          ?.nickname ||
+        devicesRaw.find((d) => d.device_uuid === selectedDeviceFilter)
+          ?.hostname ||
+        "Device"
+      : activeDevice?.nickname || "Device";
+
   return (
     <div className="flex h-full flex-col gap-5">
       <div className="flex flex-col gap-6">
@@ -493,8 +638,8 @@ export default function Missions() {
           activeTab={activeTab}
           onTabChange={setActiveTab}
           deviceDisabled={deviceTabDisabled}
-          deviceConnected={deviceConnected}
-          deviceLabel={activeDevice?.nickname || "Device"}
+          deviceConnected={canReadLiveDeviceMissions}
+          deviceLabel={deviceTabLabel}
           summary={summary}
           pendingImportCount={pendingImportCount}
           distinctLocationCount={distinctLocationCount}
@@ -505,13 +650,17 @@ export default function Missions() {
           description={
             activeTab === "db"
               ? "Review stored missions, open analytics and manage imported records."
-              : "Inspect missions detected on the selected device and prepare imports."
+              : canReadLiveDeviceMissions
+                ? "Review database missions for the selected device and live missions available on the active device."
+                : effectiveDeviceId
+                  ? "Review database missions for the selected device. Live device missions are available only when that device is active and online."
+                  : "Select a device from the top bar or filters to inspect device-specific missions."
           }
           toolbar={
             <MissionsToolbar
               devicesRaw={devicesRaw}
               selectedDeviceId={selectedDeviceFilter}
-              onDeviceChange={setSelectedDeviceFilter}
+              onDeviceChange={handleDeviceFilterChange}
               profiles={profiles}
               selectedProfileFilter={selectedProfileFilter}
               onProfileFilterChange={setSelectedProfileFilter}
@@ -536,21 +685,32 @@ export default function Missions() {
             selectedMissionId={selectedMissionId}
             sortBy={sortBy}
             onSortChange={setSortBy}
-            deviceConnected={deviceConnected}
+            deviceConnected={canReadLiveDeviceMissions}
             onToggleSelect={handleToggleSelect}
             onToggleSelectAll={handleToggleSelectAll}
             onClearSelection={() => setSelectedIds([])}
             onOpenAnalyticsForSelected={() => {
-              if (!selectedIds.length) return;
-              navigate(`/analytics?missionIds=${selectedIds.join(",")}`);
+              const analyzableIds = filteredRows
+                .filter((m) => selectedIds.includes(m.mission_id))
+                .filter((m) => m.in_db)
+                .map((m) => m.mission_id);
+
+              if (!analyzableIds.length) return;
+              navigate(`/analytics?missionIds=${analyzableIds.join(",")}`);
             }}
             onOpenDetails={handleOpenDetails}
-            onOpenHeatmap={(m) => navigate(`/heatmap?missionId=${m.mission_id}`)}
+            onOpenHeatmap={(m) =>
+              navigate(`/heatmap?missionId=${m.mission_id}`)
+            }
             onOpenAnalytics={(m) =>
               navigate(`/analytics?missionId=${m.mission_id}`)
             }
             onRename={handleRename}
             onDelete={handleDeleteRequest}
+            onImport={handleImportMission}
+            onImportNew={handleImportNew}
+            onImportSelected={handleImportSelected}
+            activeTab={activeTab}
           />
         </MissionsTablePanel>
       </div>
@@ -558,7 +718,7 @@ export default function Missions() {
       <DeleteMissionModal
         open={deleteModalOpen}
         mission={missionToDelete}
-        deviceConnected={deviceConnected}
+        deviceConnected={canReadLiveDeviceMissions}
         busy={tableBusy}
         onClose={() => {
           if (tableBusy) return;

@@ -9,6 +9,7 @@ from pathlib import Path
 from app.db.models import Mission, TelemetryPoint, MissionImage
 from app.repositories.missions_repo import MissionsRepo
 from app.repositories.devices_repo import DevicesRepo
+from app.repositories.start_points_repo import StartPointsRepo
 
 DATA_DIR = Path(__file__).resolve().parents[2] / "data"
 IMPORT_ROOT = DATA_DIR / "imports"
@@ -50,6 +51,7 @@ class MissionImporter:
     def __init__(self):
         self.missions_repo = MissionsRepo()
         self.devices_repo = DevicesRepo()
+        self.start_points_repo = StartPointsRepo()
 
     def import_zip(self, device_uuid: str, hostname: str | None, base_url: str | None, zip_path: Path) -> ImportResult:
         IMPORT_ROOT.mkdir(parents=True, exist_ok=True)
@@ -79,9 +81,9 @@ class MissionImporter:
         mission_id = meta.get("mission_id")
         if not mission_id:
             raise RuntimeError("meta.json missing mission_id")
-        
+
         mission_name = str(meta.get("mission_name") or "").strip() or str(mission_id)
-        
+
         profile_type = str(meta.get("profile_type") or "").strip() or None
         profile_label = str(meta.get("profile_label") or "").strip() or None
 
@@ -177,9 +179,11 @@ class MissionImporter:
                     filename = str(row.get("filename") or "").strip()
                     if not filename:
                         continue
+
                     img_path = images_dir / filename
                     if img_path.exists():
                         has_images = True
+
                     image_objs.append(MissionImage(
                         mission_id=mission_id,
                         ts_epoch=ts,
@@ -187,6 +191,22 @@ class MissionImporter:
                         filename=filename,
                         path=str(img_path),
                     ))
+
+        matched_start_point = None
+        location_name = None
+        start_point_id = None
+
+        if start_lat is not None and start_lon is not None:
+            matched_start_point = self.start_points_repo.match_near(
+                device_uuid=device_uuid,
+                lat=float(start_lat),
+                lon=float(start_lon),
+                radius_m=20.0,
+            )
+
+        if matched_start_point:
+            start_point_id = matched_start_point.get("id")
+            location_name = matched_start_point.get("name")
 
         imported_at = int(time.time())
 
@@ -204,6 +224,8 @@ class MissionImporter:
             profile_json=json.dumps(profile),
             meta_json=json.dumps(meta),
             location_mode=location_mode,
+            start_point_id=start_point_id,
+            location_name=location_name,
             start_lat=start_lat,
             start_lon=start_lon,
             start_alt_m=start_alt,
