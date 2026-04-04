@@ -96,6 +96,93 @@ def db_mission_track(mission_id: str):
         )
 
 
+@missions_db_bp.get("/db/missions/<mission_id>/telemetry")
+def db_mission_telemetry(mission_id: str):
+    with SessionLocal() as db:
+        rows = db.execute(
+            select(
+                TelemetryPoint.ts_epoch,
+                TelemetryPoint.lat,
+                TelemetryPoint.lon,
+                TelemetryPoint.alt_m,
+                TelemetryPoint.fix_quality,
+                TelemetryPoint.satellites,
+                TelemetryPoint.hdop,
+                TelemetryPoint.temp_c,
+                TelemetryPoint.hum_pct,
+                TelemetryPoint.press_hpa,
+                TelemetryPoint.gas_ohms,
+            )
+            .where(TelemetryPoint.mission_id == mission_id)
+            .order_by(TelemetryPoint.ts_epoch.asc())
+        ).all()
+
+        return jsonify(
+            [
+                {
+                    "ts_epoch": r[0],
+                    "lat": r[1],
+                    "lon": r[2],
+                    "alt_m": r[3],
+                    "fix_quality": r[4],
+                    "satellites": r[5],
+                    "hdop": r[6],
+                    "temp_c": r[7],
+                    "hum_pct": r[8],
+                    "press_hpa": r[9],
+                    "gas_ohms": r[10],
+                }
+                for r in rows
+            ]
+        )
+
+
+@missions_db_bp.get("/db/missions/<mission_id>/images")
+def db_mission_images(mission_id: str):
+    with SessionLocal() as db:
+        rows = db.execute(
+            select(
+                MissionImage.id,
+                MissionImage.ts_epoch,
+                MissionImage.lat,
+                MissionImage.lon,
+                MissionImage.alt_m,
+                MissionImage.filename,
+            )
+            .where(MissionImage.mission_id == mission_id)
+            .order_by(MissionImage.ts_epoch.asc(), MissionImage.id.asc())
+        ).all()
+
+        return jsonify(
+            [
+                {
+                    "id": r[0],
+                    "ts_epoch": r[1],
+                    "lat": r[2],
+                    "lon": r[3],
+                    "alt_m": r[4],
+                    "filename": r[5],
+                }
+                for r in rows
+            ]
+        )
+
+
+@missions_db_bp.get("/db/missions/<mission_id>/images/<int:image_id>/file")
+def db_mission_image_file(mission_id: str, image_id: int):
+    with SessionLocal() as db:
+        img = db.get(MissionImage, image_id)
+        if not img or img.mission_id != mission_id:
+            return jsonify({"ok": False, "error": "Image not found"}), 404
+
+        image_path = img.path
+
+    if not image_path or not os.path.exists(image_path):
+        return jsonify({"ok": False, "error": "Image file not found on server"}), 404
+
+    return send_file(image_path, mimetype="image/jpeg")
+
+
 @missions_db_bp.get("/db/missions/<mission_id>/stats")
 def db_mission_stats(mission_id: str):
     with SessionLocal() as db:
