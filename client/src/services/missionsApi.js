@@ -197,9 +197,10 @@ export async function importNewMissions() {
   return data;
 }
 
-export async function importSelectedMissions(mission_ids) {
+export async function importSelectedMissions(mission_ids, options = {}) {
   const { data } = await api.post("/sync/active/import-selected", {
     mission_ids: ensureArray(mission_ids),
+    overwrite: Boolean(options.overwrite),
   });
   return data;
 }

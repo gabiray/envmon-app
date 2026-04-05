@@ -32,8 +32,19 @@ function ModeChip({ active = false, icon: Icon, label, onClick }) {
   );
 }
 
+function DetailField({ label, value, mono = false }) {
+  return (
+    <div className="rounded-2xl border border-base-300 bg-base-100 px-3 py-3">
+      <div className="text-[11px] font-semibold uppercase tracking-wide text-base-content/45">
+        {label}
+      </div>
+      <div className={`mt-1 text-sm ${mono ? "font-mono" : ""}`}>{value}</div>
+    </div>
+  );
+}
+
 export default function LocationPickerPanel({
-  mode = "chooser", // chooser | gps-new
+  mode = "chooser",
   locationMode = "gps",
   gpsDraftCoords = null,
   startPoints = [],
@@ -42,6 +53,9 @@ export default function LocationPickerPanel({
   mapPickEnabled = false,
   busy = false,
   errorText = "",
+  gpsPreviewBusy = false,
+  gpsPreviewError = "",
+  gpsPreviewPoint = null,
   onSelectStartPoint = () => {},
   onChooseGpsMode = () => {},
   onChooseFixedMode = () => {},
@@ -50,6 +64,8 @@ export default function LocationPickerPanel({
   onSavePickedLocation = async () => null,
   onSaveGpsNamedLocation = async () => {},
   onConfirmFixed = () => {},
+  onPreviewGpsOnMap = async () => {},
+  onClearGpsPreview = () => {},
   onBack = () => {},
 }) {
   const [search, setSearch] = useState("");
@@ -61,13 +77,15 @@ export default function LocationPickerPanel({
     if (!q) return startPoints;
 
     return startPoints.filter((item) =>
-      String(item.name || "").toLowerCase().includes(q)
+      String(item.name || "")
+        .toLowerCase()
+        .includes(q),
     );
   }, [search, startPoints]);
 
   const selectedPoint = useMemo(
     () => startPoints.find((p) => p.id === selectedStartPointId) || null,
-    [startPoints, selectedStartPointId]
+    [startPoints, selectedStartPointId],
   );
 
   async function handleSaveNewFixedLocation() {
@@ -117,23 +135,16 @@ export default function LocationPickerPanel({
             </div>
 
             <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <div className="rounded-2xl border border-base-300 bg-base-100 px-3 py-3">
-                <div className="text-[11px] font-semibold uppercase tracking-wide text-base-content/45">
-                  Latitude
-                </div>
-                <div className="mt-1 font-mono text-sm">
-                  {formatCoord(gpsDraftCoords?.lat)}
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-base-300 bg-base-100 px-3 py-3">
-                <div className="text-[11px] font-semibold uppercase tracking-wide text-base-content/45">
-                  Longitude
-                </div>
-                <div className="mt-1 font-mono text-sm">
-                  {formatCoord(gpsDraftCoords?.lng)}
-                </div>
-              </div>
+              <DetailField
+                label="Latitude"
+                value={formatCoord(gpsDraftCoords?.lat)}
+                mono
+              />
+              <DetailField
+                label="Longitude"
+                value={formatCoord(gpsDraftCoords?.lng)}
+                mono
+              />
             </div>
 
             <label className="form-control mt-4">
@@ -189,25 +200,107 @@ export default function LocationPickerPanel({
           </div>
 
           {locationMode === "gps" ? (
-            <div className="mt-5 rounded-2xl border border-info/30 bg-info/10 p-4">
-              <div className="flex items-center gap-2 text-sm font-semibold">
-                <FiNavigation className="text-info" />
-                Use live GPS at start
-              </div>
-              <div className="mt-2 text-sm text-base-content/70">
-                At mission start, the app validates the GPS fix and reuses a saved
-                location if one exists nearby.
+            <>
+              <div className="mt-5 rounded-2xl border border-info/30 bg-info/10 p-4">
+                <div className="flex items-center gap-2 text-sm font-semibold">
+                  <FiNavigation className="text-info" />
+                  Use live GPS at start
+                </div>
+
+                <div className="mt-2 text-sm text-base-content/70">
+                  At mission start, the app validates the GPS fix and reuses a
+                  saved location if one exists nearby.
+                </div>
+
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <button
+                    className="btn btn-sm btn-primary rounded-xl"
+                    onClick={onChooseGpsMode}
+                  >
+                    Keep GPS source
+                  </button>
+
+                  <button
+                    className="btn btn-sm rounded-xl border-base-300 bg-base-100"
+                    onClick={onPreviewGpsOnMap}
+                    disabled={gpsPreviewBusy || busy}
+                  >
+                    {gpsPreviewBusy ? (
+                      <span className="loading loading-spinner loading-xs" />
+                    ) : null}
+                    Check on map
+                  </button>
+                </div>
+
+                {gpsPreviewError ? (
+                  <div className="mt-3 rounded-2xl border border-warning/30 bg-warning/10 px-3 py-3 text-sm text-warning-content">
+                    {gpsPreviewError}
+                  </div>
+                ) : null}
               </div>
 
-              <div className="mt-4">
-                <button
-                  className="btn btn-sm btn-primary rounded-xl"
-                  onClick={onChooseGpsMode}
-                >
-                  Keep GPS source
-                </button>
-              </div>
-            </div>
+              {gpsPreviewPoint ? (
+                <div className="mt-4 rounded-2xl border border-base-300 bg-base-200/40 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="flex items-center gap-2 text-sm font-semibold">
+                        <FiMapPin className="text-info" />
+                        GPS preview details
+                      </div>
+                      <div className="mt-1 text-sm text-base-content/60">
+                        Hover the map point for details.
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      className="btn btn-sm rounded-xl border-base-300 bg-base-100"
+                      onClick={onClearGpsPreview}
+                    >
+                      <FiX />
+                      Clear preview
+                    </button>
+                  </div>
+
+                  <div className="mt-4 space-y-3">
+                    <div className="rounded-2xl border border-base-300 bg-base-100 px-3 py-3">
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="text-xs font-semibold uppercase tracking-wide text-base-content/45">
+                          Latitude
+                        </div>
+                        <div className="text-sm font-mono">
+                          {formatCoord(gpsPreviewPoint.lat)}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="rounded-2xl border border-base-300 bg-base-100 px-3 py-3">
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="text-xs font-semibold uppercase tracking-wide text-base-content/45">
+                          Longitude
+                        </div>
+                        <div className="text-sm font-mono">
+                          {formatCoord(gpsPreviewPoint.lng)}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="rounded-2xl border border-base-300 bg-base-100 px-3 py-3">
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="text-xs font-semibold uppercase tracking-wide text-base-content/45">
+                          Altitude
+                        </div>
+                        <div className="text-sm">
+                          {gpsPreviewPoint.alt_m != null
+                            ? `${Number(gpsPreviewPoint.alt_m).toFixed(1)} m`
+                            : "—"}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+            </>
           ) : (
             <>
               <div className="mt-5 rounded-2xl border border-base-300 bg-base-200/50 p-3">
@@ -254,23 +347,16 @@ export default function LocationPickerPanel({
                   </div>
 
                   <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <div className="rounded-2xl border border-base-300 bg-base-100 px-3 py-3">
-                      <div className="text-[11px] font-semibold uppercase tracking-wide text-base-content/45">
-                        Latitude
-                      </div>
-                      <div className="mt-1 font-mono text-sm">
-                        {formatCoord(pendingMapPick.lat)}
-                      </div>
-                    </div>
-
-                    <div className="rounded-2xl border border-base-300 bg-base-100 px-3 py-3">
-                      <div className="text-[11px] font-semibold uppercase tracking-wide text-base-content/45">
-                        Longitude
-                      </div>
-                      <div className="mt-1 font-mono text-sm">
-                        {formatCoord(pendingMapPick.lng)}
-                      </div>
-                    </div>
+                    <DetailField
+                      label="Latitude"
+                      value={formatCoord(pendingMapPick.lat)}
+                      mono
+                    />
+                    <DetailField
+                      label="Longitude"
+                      value={formatCoord(pendingMapPick.lng)}
+                      mono
+                    />
                   </div>
 
                   <label className="form-control mt-4">
@@ -300,12 +386,14 @@ export default function LocationPickerPanel({
 
               <div className="mt-4 flex items-center justify-between">
                 <div className="text-sm font-semibold">Saved locations</div>
-                <span className="badge badge-outline">{filteredPoints.length}</span>
+                <span className="badge badge-outline">
+                  {filteredPoints.length}
+                </span>
               </div>
 
               <div className="mt-3 max-h-[252px] overflow-y-auto rounded-2xl border border-base-300 bg-base-100 p-2 custom-scrollbar">
                 {filteredPoints.length === 0 ? (
-                  <div className="flex h-full min-h-40 items-center justify-center text-center text-sm text-base-content/55">
+                  <div className="flex min-h-40 h-full items-center justify-center text-center text-sm text-base-content/55">
                     No locations found.
                   </div>
                 ) : (

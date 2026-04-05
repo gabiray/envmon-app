@@ -22,12 +22,16 @@ def sync_active_import_selected():
     try:
         payload = request.get_json(silent=True) or {}
         mission_ids = payload.get("mission_ids") or []
+        overwrite = bool(payload.get("overwrite", False))
 
         if not isinstance(mission_ids, list) or not mission_ids:
-            return jsonify({"ok": False, "error": "mission_ids must be a non-empty list"}), 400
+            return jsonify({
+                "ok": False,
+                "error": "mission_ids must be a non-empty list",
+            }), 400
 
         svc = SyncService()
-        result = svc.sync_selected(mission_ids)
+        result = svc.sync_selected(mission_ids, overwrite=overwrite)
         return jsonify(result)
     except DeviceNotSelected as e:
         return jsonify({"ok": False, "error": str(e)}), 400

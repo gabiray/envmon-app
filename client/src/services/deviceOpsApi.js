@@ -25,8 +25,3 @@ export async function getDbMissions(device_uuid) {
   // Backend returns an array
   return Array.isArray(data) ? data : [];
 }
-
-export async function importNewMissions() {
-  const { data } = await api.post("/sync/active/import-new", {});
-  return data;
-}

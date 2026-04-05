@@ -22,7 +22,7 @@ if (MAPTILER_KEY) {
 
 const CUSTOM_GLOBE_MAP_ID = "019d0124-8989-7808-b02b-a8df305b92f3";
 const GLOBE_STYLE_URL = `https://api.maptiler.com/maps/${CUSTOM_GLOBE_MAP_ID}/style.json?key=${MAPTILER_KEY}`;
-const TOPO_STYLE_URL = `https://api.maptiler.com/maps/topo-v2/style.json?key=${MAPTILER_KEY}`;
+const TOPO_STYLE_URL = `https://api.maptiler.com/maps/topo-v4/style.json?key=${MAPTILER_KEY}`;
 const TERRAIN_URL = `https://api.maptiler.com/tiles/terrain-rgb-v2/tiles.json?key=${MAPTILER_KEY}`;
 
 const CAMERA_PRESETS = {

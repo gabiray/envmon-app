@@ -5,6 +5,7 @@ import DeviceHeroBanner from "../components/dashboard/DeviceHeroBanner";
 import DeviceStatusPanel from "../components/dashboard/DeviceStatusPanel";
 import MissionSyncPanel from "../components/dashboard/MissionSyncPanel";
 import MissionMapPanel from "../components/dashboard/MissionMapPanel";
+import ReimportMissionsModal from "../components/dashboard/ReimportMissionsModal";
 
 import { useDeviceConnection } from "../hooks/useDeviceConnection";
 import {
@@ -16,11 +17,12 @@ import {
   startMission,
   stopMission,
   abortMission,
+  importNewMissions,
+  importSelectedMissions,
 } from "../services/missionsApi";
 import {
   getDeviceMissions,
   getDbMissions,
-  importNewMissions,
 } from "../services/deviceOpsApi";
 
 function ipFromBaseUrl(baseUrl) {
@@ -63,6 +65,9 @@ export default function Dashboard() {
   const [busy, setBusy] = useState(false);
   const [busyStatus, setBusyStatus] = useState(false);
   const [statusExpandSignal, setStatusExpandSignal] = useState(0);
+
+  const [reimportModalOpen, setReimportModalOpen] = useState(false);
+  const [reimportCandidates, setReimportCandidates] = useState([]);
 
   const [deviceMissionsData, setDeviceMissionsData] = useState({
     missions: [],
@@ -236,6 +241,46 @@ export default function Dashboard() {
     }
   };
 
+  async function handleImportSelected() {
+    const selectedRows = filteredMissionRows.filter((mission) =>
+      selectedMissionIds.includes(mission.mission_id),
+    );
+
+    if (!selectedRows.length) return;
+
+    const alreadyImported = selectedRows.filter((mission) => mission.imported);
+    const selectedIds = selectedRows.map((mission) => mission.mission_id);
+
+    if (alreadyImported.length > 0) {
+      setReimportCandidates(selectedRows);
+      setReimportModalOpen(true);
+      return;
+    }
+
+    setBusy(true);
+    try {
+      await importSelectedMissions(selectedIds);
+      await refreshMissionSync();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleConfirmReimport() {
+    const ids = reimportCandidates.map((mission) => mission.mission_id);
+    if (!ids.length) return;
+
+    setBusy(true);
+    try {
+      await importSelectedMissions(ids, { overwrite: true });
+      setReimportModalOpen(false);
+      setReimportCandidates([]);
+      await refreshMissionSync();
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const handleStartMission = async (formPayload) => {
     if (!selectedDeviceId || selectedDeviceId === "none") {
       return { ok: false, error: "Select a device first." };
@@ -403,11 +448,13 @@ export default function Dashboard() {
               )
             }
             onRefresh={refreshMissionSync}
-            onImportSelected={handleImportNew}
+            onImportSelected={handleImportSelected}
             onImportNew={handleImportNew}
-            loading={missionsLoading}
-            importing={missionsImporting}
-            canImport={deviceStatus === "connected"}
+            loading={busy}
+            importing={busy}
+            canImport={
+              selectedDeviceId !== "none" && deviceStatus === "connected"
+            }
           />
         </div>
       </div>
@@ -424,6 +471,18 @@ export default function Dashboard() {
         onStopMission={() => handleAction(stopMission)}
         onAbortMission={() => handleAction(abortMission)}
         busy={busy}
+      />
+
+      <ReimportMissionsModal
+        open={reimportModalOpen}
+        missions={reimportCandidates}
+        busy={busy}
+        onClose={() => {
+          if (busy) return;
+          setReimportModalOpen(false);
+          setReimportCandidates([]);
+        }}
+        onConfirm={handleConfirmReimport}
       />
     </div>
   );

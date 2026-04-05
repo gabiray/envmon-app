@@ -148,3 +148,53 @@ class SyncService:
             "errors": errors,
         }
         
+    def sync_selected(self, mission_ids: list[str], overwrite: bool = False) -> dict:
+        device_uuid, hostname, base_url = self._read_active_device_info()
+
+        imported = []
+        skipped = []
+        replaced = []
+        errors = []
+
+        seen = set()
+        clean_ids = []
+
+        for mid in mission_ids or []:
+            mid = str(mid or "").strip()
+            if not mid or mid in seen:
+                continue
+            seen.add(mid)
+            clean_ids.append(mid)
+
+        for mid in clean_ids:
+            exists = self.missions_repo.exists(mid)
+
+            if exists and not overwrite:
+                skipped.append(mid)
+                continue
+
+            try:
+                if exists and overwrite:
+                    self.missions_repo.delete_mission(mid)
+                    replaced.append(mid)
+
+                imported.append(self.sync_one(device_uuid, hostname, base_url, mid))
+            except Exception as e:
+                errors.append({
+                    "mission_id": mid,
+                    "error": str(e),
+                })
+
+        return {
+            "ok": len(errors) == 0,
+            "requested_count": len(clean_ids),
+            "imported_count": len(imported),
+            "skipped_count": len(skipped),
+            "replaced_count": len(replaced),
+            "error_count": len(errors),
+            "imported": imported,
+            "skipped": skipped,
+            "replaced": replaced,
+            "errors": errors,
+        }
+        

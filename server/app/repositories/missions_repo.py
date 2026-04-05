@@ -1,6 +1,9 @@
 from sqlalchemy import select, delete
+from pathlib import Path
 from app.db.session import SessionLocal
 from app.db.models import Mission, TelemetryPoint, MissionImage
+
+import shutil
 
 
 class MissionsRepo:
@@ -61,4 +64,33 @@ class MissionsRepo:
             "has_images": bool(m.has_images),
             "imported_at_epoch": m.imported_at_epoch,
         }
+        
+    def delete_mission(self, mission_id: str) -> bool:
+        with SessionLocal() as db:
+            mission = db.get(Mission, mission_id)
+            if not mission:
+                return False
+
+            unpacked_path = mission.unpacked_path
+            raw_zip_path = mission.raw_zip_path
+
+            db.execute(delete(TelemetryPoint).where(TelemetryPoint.mission_id == mission_id))
+            db.execute(delete(MissionImage).where(MissionImage.mission_id == mission_id))
+            db.execute(delete(Mission).where(Mission.mission_id == mission_id))
+            db.commit()
+
+        try:
+            if unpacked_path:
+                unpacked_dir = Path(unpacked_path)
+                if unpacked_dir.exists():
+                    mission_dir = unpacked_dir.parent
+                    shutil.rmtree(mission_dir, ignore_errors=True)
+                elif raw_zip_path:
+                    raw_zip = Path(raw_zip_path)
+                    if raw_zip.exists():
+                        shutil.rmtree(raw_zip.parent, ignore_errors=True)
+        except Exception:
+            pass
+
+        return True
         

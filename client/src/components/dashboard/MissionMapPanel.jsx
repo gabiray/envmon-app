@@ -2,7 +2,7 @@ import React, { useMemo, useState } from "react";
 
 import MissionPanelInline from "./MissionPanelInline";
 import LocationPickerPanel from "./LocationPickerPanel";
-import MissionMapLibreMap from "../map/MissionMapLibreMap";
+import MissionDashboardMap from "../map/MissionDashboardMap";
 
 export default function MissionMapPanel({
   deviceStatus = "inactive",
@@ -26,6 +26,10 @@ export default function MissionMapPanel({
   const [gpsPendingPayload, setGpsPendingPayload] = useState(null);
   const [pickerBusy, setPickerBusy] = useState(false);
   const [pickerErrorText, setPickerErrorText] = useState("");
+
+  const [gpsPreviewPoint, setGpsPreviewPoint] = useState(null);
+  const [gpsPreviewBusy, setGpsPreviewBusy] = useState(false);
+  const [gpsPreviewError, setGpsPreviewError] = useState("");
 
   const selectedStartPoint = useMemo(
     () => startPoints.find((p) => p.id === selectedStartPointId) || null,
@@ -51,6 +55,7 @@ export default function MissionMapPanel({
 
   function openChooserPanel() {
     setPickerErrorText("");
+    setGpsPreviewError("");
     setPickerMode("chooser");
     setPickerOpen(true);
   }
@@ -61,6 +66,7 @@ export default function MissionMapPanel({
     setMapPickEnabled(false);
     setPendingMapPick(null);
     setPickerErrorText("");
+    setGpsPreviewError("");
   }
 
   function handleChooseGpsMode() {
@@ -73,6 +79,8 @@ export default function MissionMapPanel({
 
   function handleChooseFixedMode() {
     setLocationMode("fixed");
+    setGpsPreviewError("");
+    setGpsPreviewPoint(null);
   }
 
   function handleConfirmFixed() {
@@ -80,6 +88,8 @@ export default function MissionMapPanel({
     setLocationMode("fixed");
     setPendingMapPick(null);
     setMapPickEnabled(false);
+    setGpsPreviewPoint(null);
+    setGpsPreviewError("");
     setPickerOpen(false);
   }
 
@@ -117,10 +127,44 @@ export default function MissionMapPanel({
     }
   }
 
+  async function handlePreviewGpsOnMap() {
+    setGpsPreviewBusy(true);
+    setGpsPreviewError("");
+
+    try {
+      const gps = deviceState?.gps || {};
+      const hasCurrentFix = Boolean(gps?.has_fix);
+      const fix = hasCurrentFix ? gps?.last_good_fix || null : null;
+
+      if (fix?.lat == null || fix?.lon == null) {
+        setGpsPreviewPoint(null);
+        setGpsPreviewError("No valid GPS fix available yet.");
+        return;
+      }
+
+      setGpsPreviewPoint({
+        lat: Number(fix.lat),
+        lng: Number(fix.lon),
+        alt_m: fix.alt_m ?? null,
+        satellites: fix.satellites ?? gps?.satellites ?? null,
+        hdop: fix.hdop ?? gps?.hdop ?? null,
+      });
+
+      setPendingMapPick(null);
+      setMapPickEnabled(false);
+    } finally {
+      setGpsPreviewBusy(false);
+    }
+  }
+
+  function handleClearGpsPreview() {
+    setGpsPreviewPoint(null);
+    setGpsPreviewError("");
+  }
+
   return (
     <section className="overflow-hidden rounded-3xl border border-base-300 bg-base-100 shadow-xl">
-      <div className="flex flex-col xl:flex-row min-h-165">
-        {/* Panoul din stânga */}
+      <div className="flex min-h-165 flex-col xl:flex-row">
         <div className="w-full shrink-0 border-b border-base-300 bg-base-100 xl:w-[430px] xl:border-b-0 xl:border-r">
           <div className="h-full">
             {pickerOpen ? (
@@ -135,14 +179,23 @@ export default function MissionMapPanel({
                   mapPickEnabled={mapPickEnabled}
                   busy={pickerBusy}
                   errorText={pickerErrorText}
+                  gpsPreviewBusy={gpsPreviewBusy}
+                  gpsPreviewError={gpsPreviewError}
+                  gpsPreviewPoint={gpsPreviewPoint}
                   onSelectStartPoint={onSelectStartPoint}
                   onChooseGpsMode={handleChooseGpsMode}
                   onChooseFixedMode={handleChooseFixedMode}
-                  onToggleMapPick={() => setMapPickEnabled((prev) => !prev)}
+                  onToggleMapPick={() => {
+                    setGpsPreviewPoint(null);
+                    setGpsPreviewError("");
+                    setMapPickEnabled((prev) => !prev);
+                  }}
                   onClearPendingMapPick={() => setPendingMapPick(null)}
                   onSavePickedLocation={handleSavePickedLocation}
                   onSaveGpsNamedLocation={handleSaveGpsNamedLocation}
                   onConfirmFixed={handleConfirmFixed}
+                  onPreviewGpsOnMap={handlePreviewGpsOnMap}
+                  onClearGpsPreview={handleClearGpsPreview}
                   onBack={closePicker}
                 />
               </div>
@@ -167,19 +220,20 @@ export default function MissionMapPanel({
           </div>
         </div>
 
-        {/* Harta */}
         <div className="relative min-h-130 flex-1 bg-base-200 xl:min-h-0">
           <div className="absolute inset-0">
-            <MissionMapLibreMap
+            <MissionDashboardMap
               startPoints={startPoints}
               selectedStartPointId={selectedStartPointId}
               pendingMapPick={pendingMapPick}
+              gpsPreviewPoint={gpsPreviewPoint}
               mapPickEnabled={
                 pickerOpen && locationMode === "fixed" && mapPickEnabled
               }
               onMapPick={setPendingMapPick}
               onSelectStartPoint={(id) => {
                 setPendingMapPick(null);
+                setGpsPreviewPoint(null);
                 onSelectStartPoint(id);
               }}
             />
