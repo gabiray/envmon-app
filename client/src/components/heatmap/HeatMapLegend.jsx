@@ -1,5 +1,5 @@
 import React from "react";
-import { FiActivity, FiLayers, FiNavigation } from "react-icons/fi";
+import { FiActivity, FiCamera, FiLayers, FiNavigation } from "react-icons/fi";
 
 const METRIC_LABELS = {
   temp_c: "Temperature",
@@ -34,13 +34,15 @@ export default function HeatMapLegend({
   layerMode = "none",
   metric = "temp_c",
   heatGrid = null,
+  imagePoints = [],
   loading = false,
   errorText = "",
+  showCaptures = false,
 }) {
   const showTrack = layerMode === "track" || layerMode === "mixed";
   const showHeatmap = layerMode === "heatmap" || layerMode === "mixed";
 
-  if (!showTrack && !showHeatmap && !loading && !errorText) {
+  if (!showTrack && !showHeatmap && !showCaptures && !loading && !errorText) {
     return null;
   }
 
@@ -53,6 +55,10 @@ export default function HeatMapLegend({
 
         {showHeatmap ? (
           <LayerChip icon={FiActivity} label="Heatmap layer" />
+        ) : null}
+
+        {showCaptures ? (
+          <LayerChip icon={FiCamera} label="Capture points" />
         ) : null}
       </div>
 
@@ -101,15 +107,15 @@ export default function HeatMapLegend({
         </div>
       ) : null}
 
-      {showTrack && !showHeatmap && !loading && !errorText ? (
+      {showCaptures && !loading && !errorText ? (
         <div className="mt-3 text-xs text-base-content/60">
-          The mission route is currently displayed on the globe.
+          Capture points: {Array.isArray(imagePoints) ? imagePoints.length : 0}
         </div>
       ) : null}
 
-      {layerMode === "mixed" && !loading && !errorText ? (
+      {showTrack && !showHeatmap && !showCaptures && !loading && !errorText ? (
         <div className="mt-3 text-xs text-base-content/60">
-          Track and heatmap are displayed together.
+          The mission route is currently displayed on the globe.
         </div>
       ) : null}
     </div>

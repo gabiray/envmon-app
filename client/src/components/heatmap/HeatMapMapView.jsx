@@ -7,11 +7,11 @@ import {
   FiMap,
   FiRotateCcw,
   FiX,
-  FiRotateCw,
   FiPause,
   FiPlay,
 } from "react-icons/fi";
 
+import api from "../../services/api";
 import HeatMapLegend from "./HeatMapLegend";
 
 const MAPTILER_KEY = import.meta.env.VITE_MAPTILER_KEY;
@@ -62,11 +62,23 @@ const HEAT_SOURCE_ID = "heatmap-cells-source";
 const HEAT_FILL_LAYER_ID = "heatmap-cells-fill-layer";
 const HEAT_LINE_LAYER_ID = "heatmap-cells-line-layer";
 
+const IMAGE_POINTS_SOURCE_ID = "heatmap-image-points-source";
+const IMAGE_POINTS_LAYER_ID = "heatmap-image-points-layer";
+
+function buildCaptureImageUrl(missionId, imageId) {
+  if (!missionId || imageId == null) return null;
+
+  const baseUrl =
+    typeof api?.defaults?.baseURL === "string" && api.defaults.baseURL.trim()
+      ? api.defaults.baseURL.replace(/\/$/, "")
+      : `${window.location.origin}/api`;
+
+  return `${baseUrl}/db/missions/${missionId}/images/${imageId}/file`;
+}
+
 function getDisplayName(device) {
   if (!device) return "No device";
-  return (
-    device.nickname || device.hostname || device.info?.hostname || "Device"
-  );
+  return device.nickname || device.hostname || device.info?.hostname || "Device";
 }
 
 function formatHeatValue(value) {
@@ -396,6 +408,34 @@ function ensureOverlaySourcesAndLayers(map) {
       },
     });
   }
+
+  if (!map.getSource(IMAGE_POINTS_SOURCE_ID)) {
+    map.addSource(IMAGE_POINTS_SOURCE_ID, {
+      type: "geojson",
+      data: {
+        type: "FeatureCollection",
+        features: [],
+      },
+    });
+  }
+
+  if (!map.getLayer(IMAGE_POINTS_LAYER_ID)) {
+    map.addLayer({
+      id: IMAGE_POINTS_LAYER_ID,
+      type: "circle",
+      source: IMAGE_POINTS_SOURCE_ID,
+      layout: {
+        visibility: "none",
+      },
+      paint: {
+        "circle-radius": 5.5,
+        "circle-color": "#ec4899",
+        "circle-stroke-width": 2,
+        "circle-stroke-color": "#ffffff",
+        "circle-opacity": 0.95,
+      },
+    });
+  }
 }
 
 function updateOverlayLayers(
@@ -403,9 +443,11 @@ function updateOverlayLayers(
   {
     showTrack,
     showHeatmap,
+    showCaptures,
     trackGeoJson,
     trackEndpointsGeoJson,
     heatCellsGeoJson,
+    imagePointsGeoJson,
   },
 ) {
   if (!map) return;
@@ -430,6 +472,11 @@ function updateOverlayLayers(
   const heatSource = map.getSource(HEAT_SOURCE_ID);
   if (heatSource) {
     heatSource.setData(showHeatmap ? heatCellsGeoJson : emptyCollection);
+  }
+
+  const imageSource = map.getSource(IMAGE_POINTS_SOURCE_ID);
+  if (imageSource) {
+    imageSource.setData(showCaptures ? imagePointsGeoJson : emptyCollection);
   }
 
   if (map.getLayer(TRACK_LAYER_ID)) {
@@ -469,6 +516,14 @@ function updateOverlayLayers(
       HEAT_LINE_LAYER_ID,
       "visibility",
       showHeatmap ? "visible" : "none",
+    );
+  }
+
+  if (map.getLayer(IMAGE_POINTS_LAYER_ID)) {
+    map.setLayoutProperty(
+      IMAGE_POINTS_LAYER_ID,
+      "visibility",
+      showCaptures ? "visible" : "none",
     );
   }
 }
@@ -584,37 +639,40 @@ export default function HeatMapMapView({
   onCloseLocationPopover = () => {},
   showTrack = false,
   showHeatmap = false,
+  showCaptures = false,
   heatmapMetric = "temp_c",
   layerLoading = false,
   layerErrorText = "",
   trackGeoJson = { type: "FeatureCollection", features: [] },
   trackEndpointsGeoJson = { type: "FeatureCollection", features: [] },
   heatGrid = null,
+  imagePoints = [],
   heatCellsGeoJson = { type: "FeatureCollection", features: [] },
+  imagePointsGeoJson = { type: "FeatureCollection", features: [] },
   trackBounds = [],
   heatBounds = null,
+  captureBounds = [],
 }) {
   const mapNodeRef = useRef(null);
   const mapRef = useRef(null);
-  const popupRef = useRef(null);
+  const heatPopupRef = useRef(null);
+  const capturePopupRef = useRef(null);
+  const capturePopupPinnedRef = useRef(false);
   const markersRef = useRef([]);
-  const [viewMode, setViewMode] = useState("globe"); // globe | map
-  const [globePerspective, setGlobePerspective] = useState("3d"); // 3d | 2d
-  const [mapPerspective, setMapPerspective] = useState("3d"); // 3d | 2d
+
+  const [viewMode, setViewMode] = useState("globe");
+  const [globePerspective, setGlobePerspective] = useState("3d");
+  const [mapPerspective, setMapPerspective] = useState("3d");
   const [autoRotate, setAutoRotate] = useState(true);
   const [popoverPosition, setPopoverPosition] = useState(null);
   const [mapVersion, setMapVersion] = useState(0);
+  const [capturePreview, setCapturePreview] = useState(null);
 
   const hasActiveDevice = Boolean(activeDevice && selectedDeviceId !== "none");
-  const deviceName = useMemo(
-    () => getDisplayName(activeDevice),
-    [activeDevice],
-  );
+  const deviceName = useMemo(() => getDisplayName(activeDevice), [activeDevice]);
 
   const selectedLocationPin = useMemo(() => {
-    return (
-      locationPins.find((item) => item.key === selectedLocationKey) || null
-    );
+    return locationPins.find((item) => item.key === selectedLocationKey) || null;
   }, [locationPins, selectedLocationKey]);
 
   const legendMode = useMemo(() => {
@@ -641,8 +699,11 @@ export default function HeatMapMapView({
 
     markersRef.current.forEach((item) => item.remove());
     markersRef.current = [];
-    safeRemovePopup(popupRef.current);
-    popupRef.current = null;
+    safeRemovePopup(heatPopupRef.current);
+    safeRemovePopup(capturePopupRef.current);
+    heatPopupRef.current = null;
+    capturePopupRef.current = null;
+    capturePopupPinnedRef.current = false;
 
     const camera = getCameraPreset(viewMode, globePerspective, mapPerspective);
     const isGlobe = viewMode === "globe";
@@ -678,15 +739,29 @@ export default function HeatMapMapView({
       updateOverlayLayers(map, {
         showTrack,
         showHeatmap,
+        showCaptures,
         trackGeoJson,
         trackEndpointsGeoJson,
         heatCellsGeoJson,
+        imagePointsGeoJson,
       });
+
+      try {
+        map.triggerRepaint?.();
+      } catch {}
+
       setMapVersion((prev) => prev + 1);
     });
 
     mapRef.current = map;
-    popupRef.current = new maptilersdk.Popup({
+    heatPopupRef.current = new maptilersdk.Popup({
+      closeButton: false,
+      closeOnClick: false,
+      offset: 12,
+      className: "heatmap-hover-popup",
+    });
+
+    capturePopupRef.current = new maptilersdk.Popup({
       closeButton: false,
       closeOnClick: false,
       offset: 12,
@@ -696,8 +771,11 @@ export default function HeatMapMapView({
     return () => {
       markersRef.current.forEach((item) => item.remove());
       markersRef.current = [];
-      safeRemovePopup(popupRef.current);
-      popupRef.current = null;
+      safeRemovePopup(heatPopupRef.current);
+      safeRemovePopup(capturePopupRef.current);
+      heatPopupRef.current = null;
+      capturePopupRef.current = null;
+      capturePopupPinnedRef.current = false;
       map.remove();
       mapRef.current = null;
     };
@@ -778,10 +856,16 @@ export default function HeatMapMapView({
       updateOverlayLayers(map, {
         showTrack,
         showHeatmap,
+        showCaptures,
         trackGeoJson,
         trackEndpointsGeoJson,
         heatCellsGeoJson,
+        imagePointsGeoJson,
       });
+
+      try {
+        map.triggerRepaint?.();
+      } catch {}
     };
 
     if (map.isStyleLoaded?.()) {
@@ -795,14 +879,16 @@ export default function HeatMapMapView({
     mapVersion,
     showTrack,
     showHeatmap,
+    showCaptures,
     trackGeoJson,
     trackEndpointsGeoJson,
     heatCellsGeoJson,
+    imagePointsGeoJson,
   ]);
 
   useEffect(() => {
     const map = mapRef.current;
-    const popup = popupRef.current;
+    const popup = heatPopupRef.current;
 
     if (!map || !popup) return;
 
@@ -816,6 +902,7 @@ export default function HeatMapMapView({
 
     const handleMove = (e) => {
       if (detached) return;
+      if (capturePopupPinnedRef.current) return;
 
       const feature = e.features?.[0];
       if (!feature) return;
@@ -828,22 +915,22 @@ export default function HeatMapMapView({
       try {
         popup
           .setLngLat(e.lngLat)
-          .setHTML(
-            `
+          .setHTML(`
             <div style="min-width:140px">
               <div style="font-size:12px;font-weight:700;margin-bottom:4px;">Heatmap cell</div>
               <div style="font-size:12px;opacity:.8;">Metric: ${heatmapMetric}</div>
               <div style="font-size:12px;opacity:.8;">Value: ${formatHeatValue(value)}</div>
               <div style="font-size:12px;opacity:.8;">Samples: ${samples ?? 0}</div>
             </div>
-          `,
-          )
+          `)
           .addTo(map);
       } catch {}
     };
 
     const handleLeave = () => {
       if (detached) return;
+      if (capturePopupPinnedRef.current) return;
+
       safeSetCursor(map, "");
       safeRemovePopup(popup);
     };
@@ -879,6 +966,214 @@ export default function HeatMapMapView({
       safeRemovePopup(popup);
     };
   }, [mapVersion, showHeatmap, heatmapMetric]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    const popup = capturePopupRef.current;
+    const heatPopup = heatPopupRef.current;
+
+    if (!map || !popup) return;
+
+    if (!showCaptures) {
+      capturePopupPinnedRef.current = false;
+      safeSetCursor(map, "");
+      safeRemovePopup(popup);
+      setCapturePreview(null);
+      return;
+    }
+
+    let detached = false;
+
+    const closeCapturePopup = () => {
+      capturePopupPinnedRef.current = false;
+      safeRemovePopup(popup);
+    };
+
+    const handleEnter = () => {
+      if (detached) return;
+      safeSetCursor(map, "pointer");
+    };
+
+    const handleLeave = () => {
+      if (detached) return;
+      if (capturePopupPinnedRef.current) return;
+      safeSetCursor(map, "");
+    };
+
+    function buildPopupContent(props) {
+      const wrapper = document.createElement("div");
+      wrapper.style.minWidth = "220px";
+      wrapper.style.maxWidth = "240px";
+
+      const header = document.createElement("div");
+      header.style.display = "flex";
+      header.style.alignItems = "center";
+      header.style.justifyContent = "space-between";
+      header.style.gap = "8px";
+      header.style.marginBottom = "8px";
+
+      const titleRow = document.createElement("div");
+      titleRow.style.display = "flex";
+      titleRow.style.alignItems = "center";
+      titleRow.style.gap = "6px";
+      titleRow.style.fontSize = "13px";
+      titleRow.style.fontWeight = "700";
+      titleRow.innerHTML = `<span>Capture point</span>`;
+
+      header.appendChild(titleRow);
+      wrapper.appendChild(header);
+
+      const imageId = props.id;
+      const filename = props.filename || "image.jpg";
+      const altM = props.alt_m;
+      const tsEpoch = props.ts_epoch;
+
+      const imageUrl = buildCaptureImageUrl(
+        selectedMission?.missionId,
+        imageId,
+      );
+
+      const dateText = tsEpoch
+        ? new Date(Number(tsEpoch) * 1000).toLocaleString("ro-RO", {
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+          })
+        : "Unknown";
+
+      if (imageUrl) {
+        const imageWrap = document.createElement("div");
+        imageWrap.style.position = "relative";
+        imageWrap.style.width = "100%";
+        imageWrap.style.height = "120px";
+        imageWrap.style.marginBottom = "10px";
+        imageWrap.style.borderRadius = "10px";
+        imageWrap.style.overflow = "hidden";
+        imageWrap.style.border = "1px solid rgba(148,163,184,0.25)";
+        imageWrap.style.cursor = "pointer";
+        imageWrap.onclick = () => {
+          setCapturePreview({
+            imageUrl,
+            filename,
+            tsEpoch,
+            altM,
+          });
+        };
+
+        const img = document.createElement("img");
+        img.src = imageUrl;
+        img.alt = filename;
+        img.style.width = "100%";
+        img.style.height = "100%";
+        img.style.objectFit = "cover";
+        img.loading = "lazy";
+        img.onerror = () => {
+          imageWrap.style.display = "none";
+        };
+
+        imageWrap.appendChild(img);
+        wrapper.appendChild(imageWrap);
+      }
+
+      const fileRow = document.createElement("div");
+      fileRow.style.fontSize = "12px";
+      fileRow.style.opacity = ".88";
+      fileRow.style.marginBottom = "4px";
+      fileRow.innerHTML = `<strong>File:</strong> ${filename}`;
+
+      const timeRow = document.createElement("div");
+      timeRow.style.fontSize = "12px";
+      timeRow.style.opacity = ".88";
+      timeRow.style.marginBottom = "4px";
+      timeRow.innerHTML = `<strong>Captured:</strong> ${dateText}`;
+
+      const altRow = document.createElement("div");
+      altRow.style.fontSize = "12px";
+      altRow.style.opacity = ".88";
+      altRow.innerHTML = `<strong>Altitude:</strong> ${
+        altM != null ? `${Number(altM).toFixed(1)} m` : "—"
+      }`;
+
+      wrapper.appendChild(fileRow);
+      wrapper.appendChild(timeRow);
+      wrapper.appendChild(altRow);
+
+      return wrapper;
+    }
+
+    const handleLayerClick = (e) => {
+      if (detached) return;
+
+      const feature = e.features?.[0];
+      if (!feature) return;
+
+      capturePopupPinnedRef.current = true;
+      safeRemovePopup(heatPopup);
+
+      try {
+        popup
+          .setLngLat(e.lngLat)
+          .setDOMContent(buildPopupContent(feature.properties || {}))
+          .addTo(map);
+      } catch {}
+    };
+
+    const handleMapClick = (e) => {
+      if (detached) return;
+      if (!hasLayerSafe(map, IMAGE_POINTS_LAYER_ID)) return;
+
+      const features = map.queryRenderedFeatures(e.point, {
+        layers: [IMAGE_POINTS_LAYER_ID],
+      });
+
+      if (Array.isArray(features) && features.length > 0) {
+        return;
+      }
+
+      closeCapturePopup();
+      safeSetCursor(map, "");
+    };
+
+    const bind = () => {
+      if (!hasLayerSafe(map, IMAGE_POINTS_LAYER_ID)) return;
+
+      try {
+        map.on("mouseenter", IMAGE_POINTS_LAYER_ID, handleEnter);
+        map.on("mouseleave", IMAGE_POINTS_LAYER_ID, handleLeave);
+        map.on("click", IMAGE_POINTS_LAYER_ID, handleLayerClick);
+        map.on("click", handleMapClick);
+      } catch {}
+    };
+
+    if (map.isStyleLoaded?.()) {
+      bind();
+    } else {
+      try {
+        map.once("styledata", bind);
+      } catch {}
+    }
+
+    return () => {
+      detached = true;
+
+      try {
+        if (hasLayerSafe(map, IMAGE_POINTS_LAYER_ID)) {
+          map.off("mouseenter", IMAGE_POINTS_LAYER_ID, handleEnter);
+          map.off("mouseleave", IMAGE_POINTS_LAYER_ID, handleLeave);
+          map.off("click", IMAGE_POINTS_LAYER_ID, handleLayerClick);
+        }
+
+        map.off("click", handleMapClick);
+      } catch {}
+
+      safeSetCursor(map, "");
+      safeRemovePopup(popup);
+      capturePopupPinnedRef.current = false;
+    };
+  }, [mapVersion, showCaptures, selectedMission?.missionId]);
 
   useEffect(() => {
     if (!mapRef.current) return;
@@ -948,7 +1243,7 @@ export default function HeatMapMapView({
   useEffect(() => {
     if (!mapRef.current || !selectedLocationPin) return;
     if (selectedMission) return;
-    if (showTrack || showHeatmap) return;
+    if (showTrack || showHeatmap || showCaptures) return;
 
     fitCoords(
       mapRef.current,
@@ -963,6 +1258,7 @@ export default function HeatMapMapView({
     selectedMission,
     showTrack,
     showHeatmap,
+    showCaptures,
     viewMode,
     globePerspective,
     mapPerspective,
@@ -970,7 +1266,7 @@ export default function HeatMapMapView({
 
   useEffect(() => {
     if (!mapRef.current || !selectedMission) return;
-    if (showTrack || showHeatmap) return;
+    if (showTrack || showHeatmap || showCaptures) return;
 
     const lat = selectedMission.start?.lat;
     const lon = selectedMission.start?.lon;
@@ -988,6 +1284,7 @@ export default function HeatMapMapView({
     selectedMission,
     showTrack,
     showHeatmap,
+    showCaptures,
     viewMode,
     globePerspective,
     mapPerspective,
@@ -1033,10 +1330,34 @@ export default function HeatMapMapView({
     mapPerspective,
   ]);
 
+  useEffect(() => {
+    if (!mapRef.current || !showCaptures) return;
+    if (!captureBounds?.length) return;
+
+    fitCoords(
+      mapRef.current,
+      captureBounds,
+      viewMode,
+      globePerspective,
+      mapPerspective,
+    );
+  }, [
+    mapVersion,
+    showCaptures,
+    captureBounds,
+    viewMode,
+    globePerspective,
+    mapPerspective,
+  ]);
+
   function handleReset() {
     const camera = getCameraPreset(viewMode, globePerspective, mapPerspective);
 
     onCloseLocationPopover();
+    setCapturePreview(null);
+    capturePopupPinnedRef.current = false;
+    safeRemovePopup(capturePopupRef.current);
+    safeRemovePopup(heatPopupRef.current);
 
     if (viewMode === "globe" && globePerspective === "3d") {
       setAutoRotate(true);
@@ -1072,10 +1393,8 @@ export default function HeatMapMapView({
         <div ref={mapNodeRef} className="h-full w-full" />
       )}
 
-      {/* ── Top controls bar ── */}
       <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-start justify-between gap-3 p-4">
         <div className="pointer-events-auto flex flex-wrap items-center gap-2">
-          {/* 1. Single Globe ↔ Map toggle button */}
           <ModeButton
             active={viewMode === "globe"}
             icon={viewMode === "globe" ? FiGlobe : FiMap}
@@ -1093,7 +1412,6 @@ export default function HeatMapMapView({
             }}
           />
 
-          {/* 2. Perspective toggle — Globe 3D/2D or Map 3D/2D */}
           {viewMode === "globe" ? (
             <ModeButton
               active={globePerspective === "3d"}
@@ -1121,7 +1439,6 @@ export default function HeatMapMapView({
         </div>
 
         <div className="pointer-events-auto flex items-center gap-2">
-          {/* 3. Rotate icon-only button (no text) */}
           {viewMode === "globe" ? (
             <button
               type="button"
@@ -1157,20 +1474,20 @@ export default function HeatMapMapView({
         </div>
       </div>
 
-      {/* ── Legend (top-right) ── */}
       <div className="pointer-events-none absolute right-4 top-20 z-20 w-[320px] max-w-[calc(100%-2rem)]">
         <div className="pointer-events-auto">
           <HeatMapLegend
             layerMode={legendMode}
             metric={heatmapMetric}
             heatGrid={heatGrid}
+            imagePoints={imagePoints}
             loading={layerLoading}
             errorText={layerErrorText}
+            showCaptures={showCaptures}
           />
         </div>
       </div>
 
-      {/* ── Location popover ── */}
       {selectedLocationPin && popoverPosition ? (
         <div
           className="pointer-events-none absolute z-20"
@@ -1242,7 +1559,62 @@ export default function HeatMapMapView({
         </div>
       ) : null}
 
-      {/* 4. HeatMap workspace label — glass effect */}
+      {capturePreview ? (
+        <div
+          className="absolute inset-0 z-30 flex items-center justify-center bg-black/60 p-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setCapturePreview(null);
+            }
+          }}
+        >
+          <div className="w-full max-w-5xl overflow-hidden rounded-3xl border border-base-300 bg-base-100 shadow-2xl">
+            <div className="flex items-start justify-between gap-4 border-b border-base-300 px-5 py-4">
+              <div className="min-w-0">
+                <div className="truncate text-base font-semibold text-base-content">
+                  {capturePreview.filename}
+                </div>
+                <div className="mt-1 text-sm text-base-content/60">
+                  {capturePreview.tsEpoch
+                    ? new Date(Number(capturePreview.tsEpoch) * 1000).toLocaleString(
+                        "ro-RO",
+                        {
+                          year: "numeric",
+                          month: "2-digit",
+                          day: "2-digit",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                          second: "2-digit",
+                        },
+                      )
+                    : "Unknown time"}
+                  {" • "}
+                  {capturePreview.altM != null
+                    ? `${Number(capturePreview.altM).toFixed(1)} m`
+                    : "—"}
+                </div>
+              </div>
+
+              <button
+                type="button"
+                className="btn btn-sm btn-circle btn-ghost"
+                onClick={() => setCapturePreview(null)}
+              >
+                <FiX />
+              </button>
+            </div>
+
+            <div className="flex max-h-[80vh] items-center justify-center bg-black p-4">
+              <img
+                src={capturePreview.imageUrl}
+                alt={capturePreview.filename}
+                className="max-h-[75vh] w-auto max-w-full rounded-2xl object-contain"
+              />
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {!selectedLocationPin && !selectedMission ? (
         <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 p-4">
           <div className="pointer-events-auto max-w-md glass rounded-3xl border border-white/15 px-4 py-3 shadow-sm">

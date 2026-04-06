@@ -1,5 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { fetchHeatGrid, fetchMissionTrack } from "../services/heatmapApi";
+import {
+  fetchHeatGrid,
+  fetchMissionImages,
+  fetchMissionTrack,
+} from "../services/heatmapApi";
 
 function clamp01(value) {
   if (!Number.isFinite(value)) return 0;
@@ -12,7 +16,21 @@ function normalizeTrackPoints(points) {
     .map((item) => ({
       lat: Number(item.lat),
       lon: Number(item.lon),
-      ts: item.ts ?? item.t ?? item.timestamp ?? null,
+      ts: item.ts_epoch ?? item.ts ?? item.t ?? item.timestamp ?? null,
+      alt_m: item.alt_m != null ? Number(item.alt_m) : null,
+    }));
+}
+
+function normalizeImagePoints(images) {
+  return (images || [])
+    .filter((item) => item?.lon != null && item?.lat != null)
+    .map((item) => ({
+      id: item.id,
+      filename: item.filename || "image.jpg",
+      ts_epoch: item.ts_epoch ?? null,
+      lat: Number(item.lat),
+      lon: Number(item.lon),
+      alt_m: item.alt_m != null ? Number(item.alt_m) : null,
     }));
 }
 
@@ -140,11 +158,34 @@ function buildHeatCellsGeoJson(heatGrid) {
   };
 }
 
+function buildImagePointsGeoJson(images) {
+  const normalized = normalizeImagePoints(images);
+
+  return {
+    type: "FeatureCollection",
+    features: normalized.map((item, index) => ({
+      type: "Feature",
+      properties: {
+        id: item.id,
+        index: index + 1,
+        filename: item.filename,
+        ts_epoch: item.ts_epoch,
+        alt_m: item.alt_m,
+      },
+      geometry: {
+        type: "Point",
+        coordinates: [item.lon, item.lat],
+      },
+    })),
+  };
+}
+
 export default function useHeatMapLayers({
   selectedMission = null,
   layerMode = "none",
   showTrack = false,
   showHeatmap = false,
+  showCaptures = false,
   heatmapMetric = "temp_c",
   heatmapCellM = 15,
 }) {
@@ -152,19 +193,21 @@ export default function useHeatMapLayers({
   const [errorText, setErrorText] = useState("");
   const [trackPoints, setTrackPoints] = useState([]);
   const [heatGrid, setHeatGrid] = useState(null);
+  const [imagePoints, setImagePoints] = useState([]);
 
   useEffect(() => {
     let cancelled = false;
 
     async function loadLayerData() {
       const hasMission = Boolean(selectedMission?.missionId);
-      const hasAnyLayer = showTrack || showHeatmap;
+      const hasAnyLayer = showTrack || showHeatmap || showCaptures;
 
       if (!hasMission || !hasAnyLayer || layerMode === "none") {
         setLoading(false);
         setErrorText("");
         setTrackPoints([]);
         setHeatGrid(null);
+        setImagePoints([]);
         return;
       }
 
@@ -172,7 +215,7 @@ export default function useHeatMapLayers({
       setErrorText("");
 
       try {
-        const [trackResult, heatmapResult] = await Promise.all([
+        const [trackResult, heatmapResult, imagesResult] = await Promise.all([
           showTrack
             ? fetchMissionTrack(selectedMission.missionId)
             : Promise.resolve([]),
@@ -183,17 +226,22 @@ export default function useHeatMapLayers({
                 cell_m: heatmapCellM,
               })
             : Promise.resolve(null),
+          showCaptures
+            ? fetchMissionImages(selectedMission.missionId)
+            : Promise.resolve([]),
         ]);
 
         if (cancelled) return;
 
         setTrackPoints(Array.isArray(trackResult) ? trackResult : []);
         setHeatGrid(heatmapResult || null);
+        setImagePoints(Array.isArray(imagesResult) ? imagesResult : []);
       } catch (error) {
         if (cancelled) return;
 
         setTrackPoints([]);
         setHeatGrid(null);
+        setImagePoints([]);
         setErrorText(
           error?.response?.data?.error ||
             error?.message ||
@@ -216,6 +264,7 @@ export default function useHeatMapLayers({
     layerMode,
     showTrack,
     showHeatmap,
+    showCaptures,
     heatmapMetric,
     heatmapCellM,
   ]);
@@ -232,6 +281,10 @@ export default function useHeatMapLayers({
     return buildHeatCellsGeoJson(heatGrid);
   }, [heatGrid]);
 
+  const imagePointsGeoJson = useMemo(() => {
+    return buildImagePointsGeoJson(imagePoints);
+  }, [imagePoints]);
+
   const trackBounds = useMemo(() => {
     return normalizeTrackPoints(trackPoints).map((item) => [item.lon, item.lat]);
   }, [trackPoints]);
@@ -246,15 +299,21 @@ export default function useHeatMapLayers({
     ];
   }, [heatGrid]);
 
+  const captureBounds = useMemo(() => {
+    return normalizeImagePoints(imagePoints).map((item) => [item.lon, item.lat]);
+  }, [imagePoints]);
+
   return {
     loading,
     errorText,
-    trackPoints,
     trackGeoJson,
     trackEndpointsGeoJson,
     heatGrid,
     heatCellsGeoJson,
+    imagePoints,
+    imagePointsGeoJson,
     trackBounds,
     heatBounds,
+    captureBounds,
   };
 }

@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   FiActivity,
   FiArrowLeft,
+  FiCamera,
   FiChevronDown,
   FiCpu,
   FiNavigation,
@@ -212,10 +213,12 @@ export default function HeatMapSidebar({
   onBackToExplorer = () => {},
   showTrack = false,
   showHeatmap = false,
+  showCaptures = false,
   heatmapMetric = "temp_c",
   heatmapCellM = 15,
   onToggleTrack = () => {},
   onToggleHeatmap = () => {},
+  onToggleCaptures = () => {},
   onHeatmapMetricChange = () => {},
   onHeatmapCellMChange = () => {},
   onOpenAnalytics = () => {},
@@ -318,6 +321,13 @@ export default function HeatMapSidebar({
                     icon={FiActivity}
                     label="View heatmap"
                     onClick={onToggleHeatmap}
+                  />
+
+                  <LayerToggleButton
+                    active={showCaptures}
+                    icon={FiCamera}
+                    label="View captures"
+                    onClick={onToggleCaptures}
                   />
                 </div>
 

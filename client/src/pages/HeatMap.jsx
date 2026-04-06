@@ -37,6 +37,7 @@ export default function HeatMap() {
   const [visibleLayers, setVisibleLayers] = useState({
     track: false,
     heatmap: false,
+    captures: false,
   });
   const [heatmapMetric, setHeatmapMetric] = useState("temp_c");
   const [heatmapCellM, setHeatmapCellM] = useState(15);
@@ -60,9 +61,14 @@ export default function HeatMap() {
 
   useEffect(() => {
     if (!selectedMissionId) return;
+
     if (!missionMap.has(selectedMissionId)) {
       setSelectedMissionId(null);
-      setVisibleLayers({ track: false, heatmap: false });
+      setVisibleLayers({
+        track: false,
+        heatmap: false,
+        captures: false,
+      });
     }
   }, [selectedMissionId, missionMap]);
 
@@ -73,13 +79,20 @@ export default function HeatMap() {
     trackEndpointsGeoJson,
     heatGrid,
     heatCellsGeoJson,
+    imagePoints,
+    imagePointsGeoJson,
     trackBounds,
     heatBounds,
+    captureBounds,
   } = useHeatMapLayers({
     selectedMission,
-    layerMode: visibleLayers.track || visibleLayers.heatmap ? "mixed" : "none",
+    layerMode:
+      visibleLayers.track || visibleLayers.heatmap || visibleLayers.captures
+        ? "mixed"
+        : "none",
     showTrack: visibleLayers.track,
     showHeatmap: visibleLayers.heatmap,
+    showCaptures: visibleLayers.captures,
     heatmapMetric,
     heatmapCellM,
   });
@@ -115,6 +128,7 @@ export default function HeatMap() {
     setVisibleLayers({
       track: true,
       heatmap: true,
+      captures: true,
     });
     setExpandedMissionIds((prev) =>
       prev.includes(requestedMissionId) ? prev : [...prev, requestedMissionId],
@@ -126,7 +140,11 @@ export default function HeatMap() {
     setSelectedMissionId(null);
     setSelectedLocationKey(null);
     setExpandedMissionIds([]);
-    setVisibleLayers({ track: false, heatmap: false });
+    setVisibleLayers({
+      track: false,
+      heatmap: false,
+      captures: false,
+    });
 
     if (activeDevice) {
       onProfileChange(nextType);
@@ -164,7 +182,11 @@ export default function HeatMap() {
 
   function handleBackToExplorer() {
     setSelectedMissionId(null);
-    setVisibleLayers({ track: false, heatmap: false });
+    setVisibleLayers({
+      track: false,
+      heatmap: false,
+      captures: false,
+    });
     setSelectedLocationKey(null);
 
     if (requestedMissionId) {
@@ -205,13 +227,26 @@ export default function HeatMap() {
             onBackToExplorer={handleBackToExplorer}
             showTrack={visibleLayers.track}
             showHeatmap={visibleLayers.heatmap}
+            showCaptures={visibleLayers.captures}
             heatmapMetric={heatmapMetric}
             heatmapCellM={heatmapCellM}
             onToggleTrack={() =>
-              setVisibleLayers((prev) => ({ ...prev, track: !prev.track }))
+              setVisibleLayers((prev) => ({
+                ...prev,
+                track: !prev.track,
+              }))
             }
             onToggleHeatmap={() =>
-              setVisibleLayers((prev) => ({ ...prev, heatmap: !prev.heatmap }))
+              setVisibleLayers((prev) => ({
+                ...prev,
+                heatmap: !prev.heatmap,
+              }))
+            }
+            onToggleCaptures={() =>
+              setVisibleLayers((prev) => ({
+                ...prev,
+                captures: !prev.captures,
+              }))
             }
             onHeatmapMetricChange={setHeatmapMetric}
             onHeatmapCellMChange={setHeatmapCellM}
@@ -234,15 +269,19 @@ export default function HeatMap() {
             onCloseLocationPopover={handleCloseLocationPopover}
             showTrack={visibleLayers.track}
             showHeatmap={visibleLayers.heatmap}
+            showCaptures={visibleLayers.captures}
             heatmapMetric={heatmapMetric}
             heatGrid={heatGrid}
+            imagePoints={imagePoints}
             layerLoading={layerLoading}
             layerErrorText={layerErrorText}
             trackGeoJson={trackGeoJson}
             trackEndpointsGeoJson={trackEndpointsGeoJson}
             heatCellsGeoJson={heatCellsGeoJson}
+            imagePointsGeoJson={imagePointsGeoJson}
             trackBounds={trackBounds}
             heatBounds={heatBounds}
+            captureBounds={captureBounds}
           />
         }
       />

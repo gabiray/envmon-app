@@ -12,14 +12,27 @@ export async function fetchMissionTrack(mission_id) {
   return Array.isArray(data) ? data : [];
 }
 
-export async function fetchMissionStats(mission_id) {
-  const { data } = await api.get(`/db/missions/${mission_id}/stats`);
-  return data || null;
+export async function fetchMissionImages(mission_id) {
+  const { data } = await api.get(`/db/missions/${mission_id}/images`);
+  return Array.isArray(data) ? data : [];
 }
 
-export async function fetchHeatGrid({ mission_id, metric = "temp_c", cell_m = 15 }) {
+export function buildMissionImageUrl(missionId, imageId) {
+  return `${api.defaults.baseURL}/db/missions/${missionId}/images/${imageId}/file`;
+}
+
+export async function fetchHeatGrid({
+  mission_id,
+  metric = "temp_c",
+  cell_m = 15,
+}) {
   const { data } = await api.get("/db/heatmap", {
-    params: { mission_id, metric, cell_m },
+    params: {
+      mission_id,
+      metric,
+      cell_m,
+    },
   });
-  return data;
+
+  return data || null;
 }
