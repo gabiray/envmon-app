@@ -9,6 +9,7 @@ import {
   FiMoreVertical,
   FiTrash2,
   FiDownload,
+  FiDownloadCloud,
 } from "react-icons/fi";
 
 function formatDate(epoch) {
@@ -487,6 +488,7 @@ export default function MissionsTable({
                                 className="rounded-xl py-2 text-sm"
                                 onClick={() => onImport(mission)}
                               >
+                                <FiDownloadCloud className="text-base-content/60" />
                                 Import
                               </button>
                             </li>

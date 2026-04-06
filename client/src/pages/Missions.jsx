@@ -6,6 +6,7 @@ import MissionsTable from "../components/missions/MissionsTable";
 import DeleteMissionModal from "../components/missions/DeleteMissionModal";
 import MissionsOverviewPanel from "../components/missions/MissionsOverviewPanel";
 import MissionsTablePanel from "../components/missions/MissionsTablePanel";
+import MissionDetailsModal from "../components/heatmap/MissionDetailsModal";
 
 import { useDeviceConnection } from "../hooks/useDeviceConnection";
 import {
@@ -144,6 +145,43 @@ function mergeMissionSources(dbRows = [], deviceRows = []) {
   return Array.from(map.values());
 }
 
+function mapMissionToDetailsModal(mission, extra = null) {
+  if (!mission) return null;
+
+  const item = extra?.item || null;
+  const raw = mission.raw || {};
+
+  return {
+    missionId: mission.mission_id,
+    missionName: mission.mission_name || mission.mission_id,
+    deviceUuid: mission.device_uuid || item?.device_uuid || null,
+    profileType: mission.profile_type || item?.profile_type || null,
+    profileLabel: mission.profile_label || item?.profile_label || null,
+    startedAtEpoch:
+      raw.started_at_epoch ||
+      mission.date_epoch ||
+      item?.started_at_epoch ||
+      null,
+    endedAtEpoch: raw.ended_at_epoch || item?.ended_at_epoch || null,
+    status: mission.status || item?.status || "Unknown",
+    stopReason: raw.stop_reason || item?.stop_reason || null,
+    locationMode: raw.location_mode || item?.location_mode || null,
+    locationName:
+      raw.location_name ||
+      item?.location_name ||
+      mission.location_label ||
+      null,
+    start: item?.start ||
+      raw.start || {
+        lat: raw.start?.lat ?? null,
+        lon: raw.start?.lon ?? null,
+        alt_m: raw.start?.alt_m ?? null,
+      },
+    hasGps: mission.has_gps ?? item?.has_gps ?? false,
+    hasImages: mission.has_images ?? item?.has_images ?? false,
+  };
+}
+
 // ─── Page ───────────────────────────────────────────────────────────────────
 
 export default function Missions() {
@@ -174,8 +212,10 @@ export default function Missions() {
 
   // ── Details state ─────────────────────────────────────────────────────────
   const [selectedMissionId, setSelectedMissionId] = useState(null);
-  const [, setSelectedMissionDetails] = useState(null);
-  const [, setDetailsLoading] = useState(false);
+
+  const [detailsModalOpen, setDetailsModalOpen] = useState(false);
+  const [detailsMission, setDetailsMission] = useState(null);
+  const [detailsLoading, setDetailsLoading] = useState(false);
 
   // ── Toolbar / filter state ────────────────────────────────────────────────
   const [searchValue, setSearchValue] = useState("");
@@ -458,17 +498,20 @@ export default function Missions() {
 
   // ── Actions ───────────────────────────────────────────────────────────────
   async function handleOpenDetails(mission) {
+    if (!mission) return;
+
     setSelectedMissionId(mission.mission_id);
-    setSelectedMissionDetails(null);
+    setDetailsMission(mapMissionToDetailsModal(mission));
+    setDetailsModalOpen(true);
 
     if (!mission.in_db) return;
 
     setDetailsLoading(true);
     try {
       const details = await fetchDbMissionDetails(mission.mission_id);
-      setSelectedMissionDetails(details);
+      setDetailsMission(mapMissionToDetailsModal(mission, details));
     } catch {
-      setSelectedMissionDetails(null);
+      setDetailsMission(mapMissionToDetailsModal(mission));
     } finally {
       setDetailsLoading(false);
     }
@@ -726,6 +769,28 @@ export default function Missions() {
           setMissionToDelete(null);
         }}
         onConfirm={handleConfirmDelete}
+      />
+
+      <MissionDetailsModal
+        open={detailsModalOpen}
+        mission={detailsMission}
+        heatmapDisabled={!detailsMission?.missionId}
+        analyticsDisabled={!detailsMission?.missionId || detailsLoading}
+        onClose={() => {
+          if (detailsLoading) return;
+          setDetailsModalOpen(false);
+          setDetailsMission(null);
+        }}
+        onOpenHeatmap={() => {
+          if (!detailsMission?.missionId) return;
+          setDetailsModalOpen(false);
+          navigate(`/heatmap?missionId=${detailsMission.missionId}`);
+        }}
+        onOpenAnalytics={() => {
+          if (!detailsMission?.missionId) return;
+          setDetailsModalOpen(false);
+          navigate(`/analytics?missionId=${detailsMission.missionId}`);
+        }}
       />
     </div>
   );

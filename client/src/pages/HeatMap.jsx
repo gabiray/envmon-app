@@ -1,5 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { useOutletContext, useSearchParams } from "react-router-dom";
+import {
+  useNavigate,
+  useOutletContext,
+  useSearchParams,
+} from "react-router-dom";
 
 import HeatMapLayout from "../components/heatmap/HeatMapLayout";
 import HeatMapSidebar from "../components/heatmap/HeatMapSidebar";
@@ -18,6 +22,7 @@ export default function HeatMap() {
     onProfileChange,
   } = useOutletContext();
 
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const requestedMissionId = (searchParams.get("missionId") || "").trim();
@@ -80,7 +85,11 @@ export default function HeatMap() {
   });
 
   useEffect(() => {
-    if (!requestedMissionId || !Array.isArray(devicesRaw) || devicesRaw.length === 0) {
+    if (
+      !requestedMissionId ||
+      !Array.isArray(devicesRaw) ||
+      devicesRaw.length === 0
+    ) {
       return;
     }
 
@@ -146,10 +155,7 @@ export default function HeatMap() {
     setSelectedMissionId(mission.missionId);
     setSelectedLocationKey(null);
 
-    setSearchParams(
-      { missionId: mission.missionId },
-      { replace: true },
-    );
+    setSearchParams({ missionId: mission.missionId }, { replace: true });
 
     if (mission.deviceUuid && mission.deviceUuid !== selectedDeviceId) {
       await onDeviceChange(mission.deviceUuid);
@@ -168,6 +174,11 @@ export default function HeatMap() {
 
   function handleCloseLocationPopover() {
     setSelectedLocationKey(null);
+  }
+
+  function handleOpenAnalytics(mission) {
+    if (!mission?.missionId) return;
+    navigate(`/analytics?missionId=${encodeURIComponent(mission.missionId)}`);
   }
 
   return (
@@ -204,6 +215,7 @@ export default function HeatMap() {
             }
             onHeatmapMetricChange={setHeatmapMetric}
             onHeatmapCellMChange={setHeatmapCellM}
+            onOpenAnalytics={handleOpenAnalytics}
           />
         }
         map={
