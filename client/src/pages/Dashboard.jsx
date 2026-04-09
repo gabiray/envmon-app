@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { useOutletContext } from "react-router-dom";
+import { useNavigate, useOutletContext } from "react-router-dom";
 
 import DeviceHeroBanner from "../components/dashboard/DeviceHeroBanner";
 import DeviceStatusPanel from "../components/dashboard/DeviceStatusPanel";
@@ -20,10 +20,7 @@ import {
   importNewMissions,
   importSelectedMissions,
 } from "../services/missionsApi";
-import {
-  getDeviceMissions,
-  getDbMissions,
-} from "../services/deviceOpsApi";
+import { getDeviceMissions, getDbMissions } from "../services/deviceOpsApi";
 
 function ipFromBaseUrl(baseUrl) {
   try {
@@ -51,6 +48,8 @@ function buildDefaultMissionName(startPoint) {
 }
 
 export default function Dashboard() {
+  const navigate = useNavigate();
+
   const { selectedDeviceId, activeDevice } = useOutletContext();
   const {
     uiStatus: deviceStatus,
@@ -396,6 +395,17 @@ export default function Dashboard() {
     }
   };
 
+  function handleOpenMissionControl() {
+    const missionId = deviceState?.mission_id;
+    const deviceUuid = activeDevice?.device_uuid || selectedDeviceId;
+
+    if (!missionId || !deviceUuid || deviceUuid === "none") return;
+
+    navigate(
+      `/mission-control?mission_id=${encodeURIComponent(missionId)}&device_uuid=${encodeURIComponent(deviceUuid)}`,
+    );
+  }
+
   const heroDevice = useMemo(
     () => ({
       nickname:
@@ -470,6 +480,7 @@ export default function Dashboard() {
         onStartMission={handleStartMission}
         onStopMission={() => handleAction(stopMission)}
         onAbortMission={() => handleAction(abortMission)}
+        onOpenMissionControl={handleOpenMissionControl}
         busy={busy}
       />
 

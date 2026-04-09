@@ -190,7 +190,7 @@ export default function MissionPanelInline({
   const [duration, setDuration] = useState(60);
   const [cameraMode, setCameraMode] = useState("on");
   const [gpsMode, setGpsMode] = useState("best_effort");
-  const [sampleHz, setSampleHz] = useState(2);
+  const [sampleHz, setSampleHz] = useState(4);
   const [photoEvery, setPhotoEvery] = useState(5);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [errorText, setErrorText] = useState("");

@@ -1,4 +1,5 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import { FiExternalLink } from "react-icons/fi";
 
 import MissionPanelInline from "./MissionPanelInline";
 import LocationPickerPanel from "./LocationPickerPanel";
@@ -16,6 +17,7 @@ export default function MissionMapPanel({
   onStartMission = async () => ({ ok: false }),
   onStopMission = () => {},
   onAbortMission = () => {},
+  onOpenMissionControl = () => {},
 }) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerMode, setPickerMode] = useState("chooser");
@@ -35,6 +37,13 @@ export default function MissionMapPanel({
     () => startPoints.find((p) => p.id === selectedStartPointId) || null,
     [startPoints, selectedStartPointId],
   );
+
+  useEffect(() => {
+    if (!missionRunning) {
+      setGpsPreviewPoint(null);
+      setGpsPreviewError("");
+    }
+  }, [missionRunning]);
 
   async function handleSavePickedLocation({ name, latlng }) {
     const created = await onAddStartPoint({
@@ -85,6 +94,7 @@ export default function MissionMapPanel({
 
   function handleConfirmFixed() {
     if (!selectedStartPoint) return;
+
     setLocationMode("fixed");
     setPendingMapPick(null);
     setMapPickEnabled(false);
@@ -221,6 +231,19 @@ export default function MissionMapPanel({
         </div>
 
         <div className="relative min-h-130 flex-1 bg-base-200 xl:min-h-0">
+          <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-center justify-end gap-2 p-4">
+            {missionRunning ? (
+              <button
+                type="button"
+                className="btn btn-sm rounded-xl btn-info border-none text-white shadow-sm pointer-events-auto"
+                onClick={onOpenMissionControl}
+              >
+                <FiExternalLink />
+                Open Mission Control
+              </button>
+            ) : null}
+          </div>
+
           <div className="absolute inset-0">
             <MissionDashboardMap
               startPoints={startPoints}
