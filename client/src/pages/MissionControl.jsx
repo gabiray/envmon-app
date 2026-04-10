@@ -1,14 +1,41 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
 import { useMissionControlLive } from "../hooks/useMissionControlLive";
-import MissionControlToolbar from "../components/mission-control/MissionControlToolbar";
 import MissionControlMissionList from "../components/mission-control/MissionControlMissionList";
 import MissionControlMap2D from "../components/mission-control/MissionControlMap2D";
-import MissionControlDetailsPanel from "../components/mission-control/MissionControlDetailsPanel";
+import MissionControlTelemetryDock from "../components/mission-control/MissionControlTelemetryDock";
 
 function makeMissionKey(item) {
   return `${item.device_uuid}:${item.mission_id}`;
+}
+
+function toNumber(value) {
+  if (value == null || Number.isNaN(Number(value))) return null;
+  return Number(value);
+}
+
+function getLivePoint(item) {
+  const live = item?.live || {};
+  const fix = item?.gps?.last_good_fix || {};
+
+  const lat = toNumber(live.lat ?? fix.lat);
+  const lon = toNumber(live.lon ?? fix.lon);
+  const alt_m = toNumber(live.alt_m ?? fix.alt_m);
+  const ts_epoch = toNumber(live.ts_epoch ?? fix.ts_epoch);
+
+  if (lat == null || lon == null) return null;
+
+  return { lat, lon, alt_m, ts_epoch };
+}
+
+function samePoint(a, b) {
+  if (!a || !b) return false;
+  return (
+    Math.abs(a.lat - b.lat) < 0.0000001 &&
+    Math.abs(a.lon - b.lon) < 0.0000001 &&
+    Math.abs((a.alt_m ?? 0) - (b.alt_m ?? 0)) < 0.01
+  );
 }
 
 export default function MissionControl() {
@@ -21,6 +48,10 @@ export default function MissionControl() {
   const [selectedMissionKey, setSelectedMissionKey] = useState(null);
   const [followSelected, setFollowSelected] = useState(true);
   const [showAll, setShowAll] = useState(true);
+  const [resetNonce, setResetNonce] = useState(0);
+
+  const initialSelectionResolvedRef = useRef(false);
+  const [trailByMissionKey, setTrailByMissionKey] = useState({});
 
   useEffect(() => {
     if (!items.length) {
@@ -28,24 +59,75 @@ export default function MissionControl() {
       return;
     }
 
-    const preferred = items.find(
-      (item) =>
-        item.mission_id === initialMissionId &&
-        item.device_uuid === initialDeviceUuid
-    );
+    if (!initialSelectionResolvedRef.current) {
+      const preferred = items.find(
+        (item) =>
+          item.mission_id === initialMissionId &&
+          item.device_uuid === initialDeviceUuid
+      );
 
-    if (preferred) {
-      setSelectedMissionKey(makeMissionKey(preferred));
+      setSelectedMissionKey(
+        preferred ? makeMissionKey(preferred) : makeMissionKey(items[0])
+      );
+      initialSelectionResolvedRef.current = true;
       return;
     }
 
-    setSelectedMissionKey((prev) => {
-      if (prev && items.some((item) => makeMissionKey(item) === prev)) {
-        return prev;
-      }
-      return makeMissionKey(items[0]);
+    if (
+      selectedMissionKey &&
+      !items.some((item) => makeMissionKey(item) === selectedMissionKey)
+    ) {
+      setSelectedMissionKey(makeMissionKey(items[0]));
+    }
+  }, [items, initialMissionId, initialDeviceUuid, selectedMissionKey]);
+
+  useEffect(() => {
+    setTrailByMissionKey((prev) => {
+      const next = { ...prev };
+
+      items.forEach((item) => {
+        const missionKey = makeMissionKey(item);
+        const point = getLivePoint(item);
+
+        if (!point) return;
+
+        const existing = Array.isArray(next[missionKey]) ? [...next[missionKey]] : [];
+        const last = existing[existing.length - 1];
+
+        if (!last) {
+          existing.push(point);
+          next[missionKey] = existing;
+          return;
+        }
+
+        const incomingTs = point.ts_epoch ?? null;
+        const lastTs = last.ts_epoch ?? null;
+
+        if (incomingTs != null && lastTs != null && incomingTs < lastTs) return;
+
+        if (samePoint(last, point)) {
+          if (incomingTs != null && lastTs != null && incomingTs !== lastTs) {
+            existing[existing.length - 1] = {
+              ...last,
+              ts_epoch: incomingTs,
+            };
+            next[missionKey] = existing;
+          }
+          return;
+        }
+
+        existing.push(point);
+
+        if (existing.length > 1200) {
+          existing.splice(0, existing.length - 1200);
+        }
+
+        next[missionKey] = existing;
+      });
+
+      return next;
     });
-  }, [items, initialMissionId, initialDeviceUuid]);
+  }, [items]);
 
   const selectedItem = useMemo(
     () =>
@@ -53,41 +135,51 @@ export default function MissionControl() {
     [items, selectedMissionKey]
   );
 
-  return (
-    <div className="flex h-full min-h-0 flex-col gap-4">
-      <MissionControlToolbar
-        activeCount={items.length}
-        connectedCount={items.length}
-        followSelected={followSelected}
-        showAll={showAll}
-        onToggleFollow={() => setFollowSelected((prev) => !prev)}
-        onToggleShowAll={() => setShowAll((prev) => !prev)}
-      />
+  function handleReset() {
+    setSelectedMissionKey(null);
+    setFollowSelected(false);
+    setShowAll(true);
+    setResetNonce((prev) => prev + 1);
+  }
 
-      <div className="grid min-h-0 flex-1 grid-cols-12 gap-4">
-        <div className="col-span-12 min-h-0 xl:col-span-3">
+  return (
+    <section className="flex h-full min-h-0 overflow-hidden rounded-[2rem] border border-base-300 bg-base-100 shadow-sm">
+      <div className="grid h-full min-h-0 flex-1 grid-cols-1 xl:grid-cols-[360px_minmax(0,1fr)]">
+        <aside className="h-full min-h-0 overflow-hidden border-b border-base-300 xl:border-b-0 xl:border-r">
           <MissionControlMissionList
             items={items}
             loading={loading}
             error={error}
             selectedMissionKey={selectedMissionKey}
-            onSelectMissionKey={setSelectedMissionKey}
+            onSelectMissionKey={(missionKey) => {
+              setSelectedMissionKey(missionKey);
+              setFollowSelected(true);
+            }}
           />
-        </div>
+        </aside>
 
-        <div className="col-span-12 xl:col-span-6">
+        <div className="h-full min-h-0 overflow-hidden">
           <MissionControlMap2D
             items={items}
+            selectedMissionKey={selectedMissionKey}
             selectedItem={selectedItem}
             followSelected={followSelected}
             showAll={showAll}
+            trailsByMissionKey={trailByMissionKey}
+            resetNonce={resetNonce}
+            onToggleFollowSelected={() => setFollowSelected((prev) => !prev)}
+            onToggleShowAll={() => setShowAll((prev) => !prev)}
+            onReset={handleReset}
+            onSelectMissionKey={(missionKey) => {
+              setSelectedMissionKey(missionKey);
+              setFollowSelected(true);
+            }}
+            telemetryOverlay={
+              <MissionControlTelemetryDock selectedItem={selectedItem} />
+            }
           />
         </div>
-
-        <div className="col-span-12 min-h-0 xl:col-span-3">
-          <MissionControlDetailsPanel selectedItem={selectedItem} />
-        </div>
       </div>
-    </div>
+    </section>
   );
 }
