@@ -6,6 +6,9 @@ import MissionControlMissionList from "../components/mission-control/MissionCont
 import MissionControlMap2D from "../components/mission-control/MissionControlMap2D";
 import MissionControlTelemetryDock from "../components/mission-control/MissionControlTelemetryDock";
 
+const TRAIL_STORAGE_KEY = "envmon:mission-control:trails:v2";
+const MAX_POINTS_PER_MISSION = 1200;
+
 function makeMissionKey(item) {
   return `${item.device_uuid}:${item.mission_id}`;
 }
@@ -38,6 +41,42 @@ function samePoint(a, b) {
   );
 }
 
+function loadStoredTrails() {
+  if (typeof window === "undefined") return {};
+
+  try {
+    const raw = window.localStorage.getItem(TRAIL_STORAGE_KEY);
+    if (!raw) return {};
+
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return {};
+
+    const next = {};
+
+    Object.entries(parsed).forEach(([missionKey, trail]) => {
+      if (!Array.isArray(trail)) return;
+
+      const cleaned = trail
+        .map((point) => ({
+          lat: toNumber(point?.lat),
+          lon: toNumber(point?.lon),
+          alt_m: toNumber(point?.alt_m),
+          ts_epoch: toNumber(point?.ts_epoch),
+        }))
+        .filter((point) => point.lat != null && point.lon != null)
+        .slice(-MAX_POINTS_PER_MISSION);
+
+      if (cleaned.length) {
+        next[missionKey] = cleaned;
+      }
+    });
+
+    return next;
+  } catch {
+    return {};
+  }
+}
+
 export default function MissionControl() {
   const { items, loading, error } = useMissionControlLive();
   const [searchParams] = useSearchParams();
@@ -51,7 +90,20 @@ export default function MissionControl() {
   const [resetNonce, setResetNonce] = useState(0);
 
   const initialSelectionResolvedRef = useRef(false);
-  const [trailByMissionKey, setTrailByMissionKey] = useState({});
+  const [trailByMissionKey, setTrailByMissionKey] = useState(() =>
+    loadStoredTrails(),
+  );
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    try {
+      window.localStorage.setItem(
+        TRAIL_STORAGE_KEY,
+        JSON.stringify(trailByMissionKey),
+      );
+    } catch {}
+  }, [trailByMissionKey]);
 
   useEffect(() => {
     if (!items.length) {
@@ -63,11 +115,11 @@ export default function MissionControl() {
       const preferred = items.find(
         (item) =>
           item.mission_id === initialMissionId &&
-          item.device_uuid === initialDeviceUuid
+          item.device_uuid === initialDeviceUuid,
       );
 
       setSelectedMissionKey(
-        preferred ? makeMissionKey(preferred) : makeMissionKey(items[0])
+        preferred ? makeMissionKey(preferred) : makeMissionKey(items[0]),
       );
       initialSelectionResolvedRef.current = true;
       return;
@@ -83,6 +135,7 @@ export default function MissionControl() {
 
   useEffect(() => {
     setTrailByMissionKey((prev) => {
+      let changed = false;
       const next = { ...prev };
 
       items.forEach((item) => {
@@ -91,19 +144,24 @@ export default function MissionControl() {
 
         if (!point) return;
 
-        const existing = Array.isArray(next[missionKey]) ? [...next[missionKey]] : [];
+        const existing = Array.isArray(next[missionKey])
+          ? [...next[missionKey]]
+          : [];
         const last = existing[existing.length - 1];
 
         if (!last) {
           existing.push(point);
           next[missionKey] = existing;
+          changed = true;
           return;
         }
 
         const incomingTs = point.ts_epoch ?? null;
         const lastTs = last.ts_epoch ?? null;
 
-        if (incomingTs != null && lastTs != null && incomingTs < lastTs) return;
+        if (incomingTs != null && lastTs != null && incomingTs < lastTs) {
+          return;
+        }
 
         if (samePoint(last, point)) {
           if (incomingTs != null && lastTs != null && incomingTs !== lastTs) {
@@ -112,28 +170,36 @@ export default function MissionControl() {
               ts_epoch: incomingTs,
             };
             next[missionKey] = existing;
+            changed = true;
           }
           return;
         }
 
         existing.push(point);
 
-        if (existing.length > 1200) {
-          existing.splice(0, existing.length - 1200);
+        if (existing.length > MAX_POINTS_PER_MISSION) {
+          existing.splice(0, existing.length - MAX_POINTS_PER_MISSION);
         }
 
         next[missionKey] = existing;
+        changed = true;
       });
 
-      return next;
+      return changed ? next : prev;
     });
   }, [items]);
 
   const selectedItem = useMemo(
     () =>
       items.find((item) => makeMissionKey(item) === selectedMissionKey) || null,
-    [items, selectedMissionKey]
+    [items, selectedMissionKey],
   );
+
+  function handleSelectMission(missionKey) {
+    setSelectedMissionKey(missionKey);
+    setFollowSelected(true);
+    setShowAll(false);
+  }
 
   function handleReset() {
     setSelectedMissionKey(null);
@@ -151,10 +217,7 @@ export default function MissionControl() {
             loading={loading}
             error={error}
             selectedMissionKey={selectedMissionKey}
-            onSelectMissionKey={(missionKey) => {
-              setSelectedMissionKey(missionKey);
-              setFollowSelected(true);
-            }}
+            onSelectMissionKey={handleSelectMission}
           />
         </aside>
 
@@ -167,13 +230,10 @@ export default function MissionControl() {
             showAll={showAll}
             trailsByMissionKey={trailByMissionKey}
             resetNonce={resetNonce}
-            onToggleFollowSelected={() => setFollowSelected((prev) => !prev)}
-            onToggleShowAll={() => setShowAll((prev) => !prev)}
+            onSetFollowSelected={setFollowSelected}
+            onSetShowAll={setShowAll}
             onReset={handleReset}
-            onSelectMissionKey={(missionKey) => {
-              setSelectedMissionKey(missionKey);
-              setFollowSelected(true);
-            }}
+            onSelectMissionKey={handleSelectMission}
             telemetryOverlay={
               <MissionControlTelemetryDock selectedItem={selectedItem} />
             }
