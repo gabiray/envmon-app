@@ -14,6 +14,7 @@ import {
 
 const ROUTE_META = [
   { path: "/dashboard", title: "Dashboard" },
+  { path: "/mission-control", title: "Mission Control" },
   { path: "/heatmap", title: "HeatMap" },
   { path: "/missions", title: "Missions" },
   { path: "/analytics", title: "Analytics" },

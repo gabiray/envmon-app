@@ -45,6 +45,9 @@ export default function MissionControlMissionList({
     );
   }
 
+  const showNoActiveMissions = !loading && items.length === 0;
+  const showNoSearchResults = !loading && items.length > 0 && filteredItems.length === 0;
+
   return (
     <div className="flex h-full min-h-0 flex-col bg-base-100">
       <div className="border-b border-base-300 px-5 py-5">
@@ -65,41 +68,56 @@ export default function MissionControlMissionList({
             type="text"
             value={searchValue}
             onChange={(e) => setSearchValue(e.target.value)}
-            placeholder="Search a mission, device or profile..."
+            placeholder="Search active streams..."
             className="w-full bg-transparent text-sm outline-none placeholder:text-base-content/35"
           />
         </label>
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col px-5 py-5">
+      <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3 custom-scrollbar">
         {loading ? (
-          <div className="flex h-full min-h-[220px] items-center justify-center rounded-3xl border border-dashed border-base-300 bg-base-100 px-6 text-center">
-            <div>
-              <div className="loading loading-spinner loading-md text-primary" />
-              <div className="mt-3 text-sm text-base-content/60">
-                Loading live missions...
+          <div className="flex min-h-40 items-center justify-center">
+            <span className="loading loading-spinner loading-md text-primary" />
+          </div>
+        ) : showNoActiveMissions ? (
+          <div className="flex min-h-40 items-center justify-center">
+            <div className="rounded-3xl border border-dashed border-base-300 bg-base-100 px-6 py-8 text-center">
+              <div className="text-base font-semibold text-base-content">
+                No active missions
+              </div>
+              <div className="mt-2 text-sm text-base-content/60">
+                There are currently no active missions to display.
               </div>
             </div>
           </div>
-        ) : filteredItems.length === 0 ? null : (
-          <div className="h-full min-h-0 overflow-y-auto pr-1 custom-scrollbar">
-            <div className="space-y-3 pb-28">
-              {filteredItems.map((item) => {
-                const missionKey = makeMissionKey(item);
-
-                return (
-                  <MissionControlMissionListItem
-                    key={missionKey}
-                    mission={item}
-                    missionKey={missionKey}
-                    selected={missionKey === selectedMissionKey}
-                    expanded={expandedMissionKeys.includes(missionKey)}
-                    onToggleExpand={() => handleToggleExpand(missionKey)}
-                    onSelect={() => onSelectMissionKey(missionKey)}
-                  />
-                );
-              })}
+        ) : showNoSearchResults ? (
+          <div className="flex min-h-40 items-center justify-center">
+            <div className="rounded-3xl border border-dashed border-base-300 bg-base-100 px-6 py-8 text-center">
+              <div className="text-base font-semibold text-base-content">
+                No matching results
+              </div>
+              <div className="mt-2 text-sm text-base-content/60">
+                Try a different search term.
+              </div>
             </div>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {filteredItems.map((item) => {
+              const missionKey = makeMissionKey(item);
+
+              return (
+                <MissionControlMissionListItem
+                  key={missionKey}
+                  mission={item}
+                  missionKey={missionKey}
+                  selected={selectedMissionKey === missionKey}
+                  expanded={expandedMissionKeys.includes(missionKey)}
+                  onToggleExpand={() => handleToggleExpand(missionKey)}
+                  onSelect={() => onSelectMissionKey(missionKey)}
+                />
+              );
+            })}
           </div>
         )}
       </div>

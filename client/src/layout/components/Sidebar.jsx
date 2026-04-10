@@ -1,11 +1,12 @@
 import React from "react";
 import { NavLink } from "react-router-dom";
-import { FiGrid, FiMap, FiList, FiBarChart2 } from "react-icons/fi";
+import { FiGrid, FiMap, FiList, FiBarChart2, FiRadio } from "react-icons/fi";
 import droneLogo from "../../assets/drone.png";
 import styles from "../AppShell.module.css";
 
 const NAV_ITEMS = [
   { to: "/dashboard", label: "Dashboard", Icon: FiGrid },
+  { to: "/mission-control", label: "Mission Control", Icon: FiRadio },
   { to: "/heatmap", label: "HeatMap", Icon: FiMap },
   { to: "/missions", label: "Missions", Icon: FiList },
   { to: "/analytics", label: "Analytics", Icon: FiBarChart2 },

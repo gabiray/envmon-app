@@ -65,7 +65,7 @@ def mission_control_active():
                 "base_url": base_url,
                 "connected": True,
                 "mission_id": mission_id,
-                "mission_name": mission_id,
+                "mission_name": status.get("mission_name") or mission_id,
                 "profile_type": effective_profile_type,
                 "profile_label": effective_profile_label,
                 "state": state,
