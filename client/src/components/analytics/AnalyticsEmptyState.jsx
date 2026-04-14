@@ -13,7 +13,7 @@ import { TbDrone } from "react-icons/tb";
 import { MdDirectionsBike } from "react-icons/md";
 import { FaCarSide } from "react-icons/fa";
 
-import AnalyticsSimpleLineChart from "./AnalyticsSimpleLineChart";
+import AnalyticsRechartsBarChart from "./AnalyticsRechartsBarChart";
 import { fetchDbSummary, fetchDbMissions } from "../../services/analyticsApi";
 
 function formatDuration(seconds) {
@@ -35,6 +35,164 @@ function getProfileMeta(type) {
   return { label: "Unknown", Icon: FiLayers };
 }
 
+function startOfDay(dateLike) {
+  const date = new Date(dateLike);
+  date.setHours(0, 0, 0, 0);
+  return date;
+}
+
+function startOfMonth(dateLike) {
+  const date = startOfDay(dateLike);
+  date.setDate(1);
+  return date;
+}
+
+function sameDate(a, b) {
+  return a.getTime() === b.getTime();
+}
+
+function formatDayShort(dateLike) {
+  try {
+    return new Date(dateLike).toLocaleDateString("ro-RO", {
+      day: "2-digit",
+    });
+  } catch {
+    return "—";
+  }
+}
+
+function formatDayLong(dateLike) {
+  try {
+    return new Date(dateLike).toLocaleDateString("ro-RO", {
+      weekday: "short",
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    });
+  } catch {
+    return "—";
+  }
+}
+
+function formatMonthShort(dateLike) {
+  try {
+    return new Date(dateLike).toLocaleDateString("ro-RO", {
+      month: "short",
+    });
+  } catch {
+    return "—";
+  }
+}
+
+function formatMonthLong(dateLike) {
+  try {
+    return new Date(dateLike).toLocaleDateString("ro-RO", {
+      month: "long",
+      year: "numeric",
+    });
+  } catch {
+    return "—";
+  }
+}
+
+function getAvailableMissionYears(missions = []) {
+  return Array.from(
+    new Set(
+      missions
+        .map((mission) => {
+          const epoch = Number(mission?.started_at_epoch);
+          if (!Number.isFinite(epoch)) return null;
+          return new Date(epoch * 1000).getFullYear();
+        })
+        .filter((year) => Number.isFinite(year)),
+    ),
+  ).sort((a, b) => b - a);
+}
+
+function buildBuckets(missions = [], range = "month", selectedYear = null) {
+  const now = new Date();
+  const missionMap = new Map();
+
+  let start = null;
+  let end = null;
+  let shortFormatter = formatDayShort;
+  let longFormatter = formatDayLong;
+  let incrementFn = (date) => date.setDate(date.getDate() + 1);
+  let bucketKeyFn = (date) => startOfDay(date).getTime();
+
+  if (range === "week") {
+    start = startOfDay(now);
+    start.setDate(start.getDate() - 6);
+    end = startOfDay(now);
+
+    shortFormatter = formatDayShort;
+    longFormatter = formatDayLong;
+    incrementFn = (date) => date.setDate(date.getDate() + 1);
+    bucketKeyFn = (date) => startOfDay(date).getTime();
+  } else if (range === "month") {
+    start = startOfMonth(now);
+    end = new Date(start);
+    end.setMonth(end.getMonth() + 1);
+    end.setDate(0);
+    end = startOfDay(end);
+
+    shortFormatter = formatDayShort;
+    longFormatter = formatDayLong;
+    incrementFn = (date) => date.setDate(date.getDate() + 1);
+    bucketKeyFn = (date) => startOfDay(date).getTime();
+  } else {
+    const targetYear = Number.isFinite(Number(selectedYear))
+      ? Number(selectedYear)
+      : now.getFullYear();
+
+    start = new Date(targetYear, 0, 1);
+    end = new Date(targetYear, 11, 1);
+
+    shortFormatter = formatMonthShort;
+    longFormatter = formatMonthLong;
+    incrementFn = (date) => date.setMonth(date.getMonth() + 1);
+    bucketKeyFn = (date) =>
+      new Date(date.getFullYear(), date.getMonth(), 1).getTime();
+  }
+
+  missions.forEach((mission) => {
+    const epoch = Number(mission?.started_at_epoch);
+    if (!Number.isFinite(epoch)) return;
+
+    const missionDate = new Date(epoch * 1000);
+
+    if (range === "all") {
+      if (missionDate.getFullYear() !== Number(selectedYear)) return;
+    } else {
+      if (missionDate < start || missionDate > end) return;
+    }
+
+    const key = bucketKeyFn(missionDate);
+    missionMap.set(key, (missionMap.get(key) || 0) + 1);
+  });
+
+  const rows = [];
+  const cursor = new Date(start);
+
+  while (cursor <= end || sameDate(cursor, end)) {
+    const bucketDate = new Date(cursor);
+    const key = bucketKeyFn(bucketDate);
+
+    rows.push({
+      key,
+      label: shortFormatter(bucketDate),
+      fullLabel: longFormatter(bucketDate),
+      value: missionMap.get(key) || 0,
+    });
+
+    incrementFn(cursor);
+
+    if (rows.length > 366) break;
+  }
+
+  return rows;
+}
+
 function StatCard({ icon: Icon, label, value, hint }) {
   return (
     <div className="rounded-3xl border border-base-300 bg-base-100 px-5 py-5 shadow-sm">
@@ -54,9 +212,7 @@ function StatCard({ icon: Icon, label, value, hint }) {
       </div>
 
       {hint ? (
-        <div className="mt-3 text-sm text-base-content/60">
-          {hint}
-        </div>
+        <div className="mt-3 text-sm text-base-content/60">{hint}</div>
       ) : null}
     </div>
   );
@@ -75,13 +231,30 @@ function MiniBarRow({ label, value, total, icon: Icon }) {
         <span className="text-sm text-base-content/60">{value}</span>
       </div>
 
-      <div className="h-2.5 rounded-full bg-base-200 overflow-hidden">
+      <div className="h-2.5 overflow-hidden rounded-full bg-base-200">
         <div
           className="h-full rounded-full bg-primary"
           style={{ width: `${pct}%` }}
         />
       </div>
     </div>
+  );
+}
+
+function RangeChip({ active = false, label, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={[
+        "btn btn-sm rounded-xl",
+        active
+          ? "btn-primary text-white border-none"
+          : "border-base-300 bg-base-100 text-base-content hover:bg-base-200",
+      ].join(" ")}
+    >
+      {label}
+    </button>
   );
 }
 
@@ -92,6 +265,8 @@ export default function AnalyticsEmptyState() {
   const [missions, setMissions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [errorText, setErrorText] = useState("");
+  const [activityRange, setActivityRange] = useState("month");
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
 
   useEffect(() => {
     let cancelled = false;
@@ -112,13 +287,16 @@ export default function AnalyticsEmptyState() {
         setMissions(Array.isArray(missionsRes) ? missionsRes : []);
       } catch (error) {
         if (cancelled) return;
+
         setErrorText(
           error?.response?.data?.error ||
             error?.message ||
             "Failed to load analytics overview.",
         );
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
     }
 
@@ -129,6 +307,21 @@ export default function AnalyticsEmptyState() {
     };
   }, []);
 
+  const availableYears = useMemo(() => {
+    return getAvailableMissionYears(missions);
+  }, [missions]);
+
+  useEffect(() => {
+    if (!availableYears.length) {
+      setSelectedYear(new Date().getFullYear());
+      return;
+    }
+
+    if (!availableYears.includes(selectedYear)) {
+      setSelectedYear(availableYears[0]);
+    }
+  }, [availableYears, selectedYear]);
+
   const overview = useMemo(() => {
     const totalMissions = missions.length;
 
@@ -136,9 +329,11 @@ export default function AnalyticsEmptyState() {
       .map((mission) => {
         const start = Number(mission?.started_at_epoch);
         const end = Number(mission?.ended_at_epoch);
+
         if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
           return null;
         }
+
         return end - start;
       })
       .filter((value) => Number.isFinite(value));
@@ -165,32 +360,36 @@ export default function AnalyticsEmptyState() {
       }))
       .sort((a, b) => b.count - a.count);
 
-    const missionsByDayMap = new Map();
-    missions.forEach((mission) => {
-      const epoch = Number(mission?.started_at_epoch);
-      if (!Number.isFinite(epoch)) return;
-
-      const key = new Date(epoch * 1000).toLocaleDateString("ro-RO");
-      missionsByDayMap.set(key, (missionsByDayMap.get(key) || 0) + 1);
-    });
-
-    const activityPoints = Array.from(missionsByDayMap.entries()).map(
-      ([label, value], index) => ({
-        x: index,
-        label,
-        value,
-      }),
-    );
-
     return {
       totalMissions,
       avgDuration,
       withGps,
       withImages,
       byProfile,
-      activityPoints,
     };
   }, [missions]);
+
+  const activityData = useMemo(() => {
+    return buildBuckets(missions, activityRange, selectedYear);
+  }, [missions, activityRange, selectedYear]);
+
+  const activityMeta = useMemo(() => {
+    if (activityRange === "week") {
+      return {
+        subtitle: "Daily mission count for the last 7 days",
+      };
+    }
+
+    if (activityRange === "month") {
+      return {
+        subtitle: "Daily mission count for the current month",
+      };
+    }
+
+    return {
+      subtitle: `Monthly mission count for ${selectedYear}`,
+    };
+  }, [activityRange, selectedYear]);
 
   if (loading) {
     return (
@@ -231,9 +430,10 @@ export default function AnalyticsEmptyState() {
               </h1>
 
               <p className="mt-3 max-w-2xl text-sm leading-6 text-base-content/65 sm:text-base">
-                Select one or more missions to unlock detailed trends, air quality
-                insights, density analysis and profile-specific interpretation.
-                Until then, this page shows a general overview of the recorded data.
+                Select one or more missions to unlock detailed trends, air
+                quality insights, density analysis and profile-specific
+                interpretation. Until then, this page shows a general overview
+                of the recorded data.
               </p>
             </div>
 
@@ -279,40 +479,77 @@ export default function AnalyticsEmptyState() {
 
       <section className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1.4fr)_minmax(320px,0.9fr)]">
         <div className="rounded-[2rem] border border-base-300 bg-base-100 p-5 shadow-sm">
-          <div className="flex items-start justify-between gap-4">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div>
               <div className="flex items-center gap-2 text-base font-semibold">
                 <FiBarChart2 className="text-primary" />
                 Mission activity
               </div>
               <div className="mt-1 text-sm text-base-content/60">
-                Number of recorded missions over time
+                {activityMeta.subtitle}
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <RangeChip
+                label="This week"
+                active={activityRange === "week"}
+                onClick={() => setActivityRange("week")}
+              />
+
+              <RangeChip
+                label="This month"
+                active={activityRange === "month"}
+                onClick={() => setActivityRange("month")}
+              />
+
+              <div className="flex items-center gap-2">
+                <RangeChip
+                  label="All time"
+                  active={activityRange === "all"}
+                  onClick={() => setActivityRange("all")}
+                />
+
+                {activityRange === "all" ? (
+                  <select
+                    className="select select-sm h-9 min-h-9 w-[84px] rounded-xl border-base-300 bg-base-100 px-2 text-sm"
+                    value={selectedYear}
+                    onChange={(e) => setSelectedYear(Number(e.target.value))}
+                  >
+                    {availableYears.length > 0 ? (
+                      availableYears.map((year) => (
+                        <option key={year} value={year}>
+                          {year}
+                        </option>
+                      ))
+                    ) : (
+                      <option value={selectedYear}>{selectedYear}</option>
+                    )}
+                  </select>
+                ) : null}
               </div>
             </div>
           </div>
 
           <div className="mt-5">
-            {overview.activityPoints.length > 0 ? (
-              <AnalyticsSimpleLineChart
-                lines={[
-                  {
-                    id: "missions",
-                    label: "Missions",
-                    color: "#2563eb",
-                    points: overview.activityPoints.map((point) => ({
-                      x: point.x,
-                      y: point.value,
-                      label: point.label,
-                    })),
-                  },
-                ]}
-                height={280}
-              />
-            ) : (
-              <div className="rounded-2xl border border-dashed border-base-300 bg-base-200/40 px-4 py-10 text-center text-sm text-base-content/55">
-                No recorded missions available yet.
-              </div>
-            )}
+            <AnalyticsRechartsBarChart
+              data={activityData}
+              xKey="label"
+              yKey="value"
+              xLabel={
+                activityRange === "week"
+                  ? "Day"
+                  : activityRange === "month"
+                    ? "Day"
+                    : "Month"
+              }
+              yLabel="Missions"
+              height={300}
+              showLegend={true}
+              legendLabel="Recorded missions"
+              valueDecimals={0}
+              yMinOverride={0}
+            />
           </div>
         </div>
 

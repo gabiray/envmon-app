@@ -4,7 +4,6 @@ import {
   Legend,
   Line,
   LineChart,
-  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -20,10 +19,11 @@ const FALLBACK_SERIES_COLORS = [
   "#ef4444",
 ];
 
-function formatNumber(value, decimals = 3, suffix = "") {
+function formatNumber(value, decimals = 2, suffix = "") {
   if (value === null || value === undefined || Number.isNaN(Number(value))) {
     return "—";
   }
+
   return `${Number(value).toFixed(decimals)}${suffix}`;
 }
 
@@ -37,12 +37,11 @@ function formatEpochLabel(value) {
 
   try {
     return new Date(epochMs).toLocaleString("ro-RO", {
-      year: "numeric",
-      month: "2-digit",
       day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
       hour: "2-digit",
       minute: "2-digit",
-      second: "2-digit",
     });
   } catch {
     return String(value);
@@ -55,11 +54,14 @@ function buildDomain(minValue, maxValue, paddingPct = 0.12) {
   }
 
   if (minValue === maxValue) {
-    return [minValue - 1, maxValue + 1];
+    if (minValue === 0) return [-1, 1];
+    const delta = Math.max(Math.abs(minValue) * 0.2, 1);
+    return [minValue - delta, maxValue + delta];
   }
 
   const range = maxValue - minValue;
   const pad = range * paddingPct;
+
   return [minValue - pad, maxValue + pad];
 }
 
@@ -78,7 +80,9 @@ function normalizeSeries(series = [], seriesOffsetStep = 0) {
       return {
         ...item,
         color:
-          item.color || FALLBACK_SERIES_COLORS[index % FALLBACK_SERIES_COLORS.length],
+          item.color ||
+          FALLBACK_SERIES_COLORS[index % FALLBACK_SERIES_COLORS.length],
+        dataKey: item.id || item.label || `series_${index}`,
         points: item.points.map((point) => ({
           ...point,
           yOriginal: Number(point.y),
@@ -88,67 +92,63 @@ function normalizeSeries(series = [], seriesOffsetStep = 0) {
     });
 }
 
-function transformSeriesToRechartsData(series = []) {
-  const map = new Map();
+function transformSeriesToChartData(series = []) {
+  const rows = new Map();
 
   series.forEach((seriesItem) => {
-    const key = seriesItem.id || seriesItem.label;
+    seriesItem.points.forEach((point, index) => {
+      const key = `${point.x}-${index}`;
 
-    seriesItem.points.forEach((point, pointIndex) => {
-      const pointKey = `${point.x}-${pointIndex}`;
-
-      if (!map.has(pointKey)) {
-        map.set(pointKey, {
+      if (!rows.has(key)) {
+        rows.set(key, {
           __x: point.x,
-          __order: pointIndex,
+          __label: point.label || null,
+          __order: index,
         });
       }
 
-      const row = map.get(pointKey);
-      row[key] = point.yOffset;
-      row[`__meta_${key}`] = {
+      const row = rows.get(key);
+      row[seriesItem.dataKey] = point.yOffset;
+      row[`__meta_${seriesItem.dataKey}`] = {
         ...point,
-        seriesId: key,
-        seriesLabel: seriesItem.label,
         color: seriesItem.color,
+        seriesLabel: seriesItem.label,
       };
     });
   });
 
-  return Array.from(map.values()).sort((a, b) => {
+  return Array.from(rows.values()).sort((a, b) => {
     if (a.__x === b.__x) return a.__order - b.__order;
     return a.__x - b.__x;
   });
 }
 
-function buildAllYValues(series = []) {
-  return series.flatMap((item) =>
-    item.points
-      .map((point) => Number(point.yOffset))
-      .filter((value) => Number.isFinite(value)),
-  );
-}
-
-function CustomTooltip({ active, payload, unit = "", xLabel = "Time" }) {
+function CustomTooltip({
+  active,
+  payload,
+  unit = "",
+  xLabel = "Time",
+  valueDecimals = 2,
+}) {
   if (!active || !payload || !payload.length) return null;
 
-  const firstMeta = payload[0]?.payload;
-  const rawX = firstMeta?.__x;
+  const baseRow = payload[0]?.payload;
+  const displayX = baseRow?.__label || formatEpochLabel(baseRow?.__x);
 
   return (
     <div className="min-w-[220px] rounded-2xl border border-base-300 bg-base-100 px-3 py-3 shadow-lg">
       <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-base-content/45">
-        Hover details
+        Details
       </div>
 
-      <div className="space-y-1.5 text-xs">
-        <div className="flex items-start justify-between gap-4">
-          <span className="text-base-content/55">{xLabel}</span>
-          <span className="text-right font-medium text-base-content">
-            {formatEpochLabel(rawX)}
-          </span>
-        </div>
+      <div className="mb-2 flex items-start justify-between gap-3 text-xs">
+        <span className="text-base-content/55">{xLabel}</span>
+        <span className="text-right font-medium text-base-content">
+          {displayX}
+        </span>
+      </div>
 
+      <div className="space-y-2">
         {payload.map((entry) => {
           const meta = entry?.payload?.[`__meta_${entry.dataKey}`];
           if (!meta) return null;
@@ -156,52 +156,27 @@ function CustomTooltip({ active, payload, unit = "", xLabel = "Time" }) {
           return (
             <div
               key={entry.dataKey}
-              className="mt-2 rounded-xl border border-base-300 bg-base-200/35 px-2.5 py-2"
+              className="rounded-xl border border-base-300 bg-base-200/35 px-2.5 py-2"
             >
               <div className="mb-1 flex items-center gap-2">
                 <span
                   className="inline-block h-2.5 w-2.5 rounded-full"
                   style={{ backgroundColor: meta.color }}
                 />
-                <span className="font-semibold text-base-content">
+                <span className="text-sm font-semibold text-base-content">
                   {meta.seriesLabel}
                 </span>
               </div>
 
-              <div className="space-y-1">
-                <div className="flex items-start justify-between gap-4">
-                  <span className="text-base-content/55">Value</span>
-                  <span className="text-right font-medium text-base-content">
-                    {formatNumber(meta.yOriginal, 3, unit ? ` ${unit}` : "")}
-                  </span>
-                </div>
-
-                {meta.lat !== undefined && meta.lat !== null ? (
-                  <div className="flex items-start justify-between gap-4">
-                    <span className="text-base-content/55">Latitude</span>
-                    <span className="text-right font-medium text-base-content">
-                      {formatNumber(meta.lat, 6)}
-                    </span>
-                  </div>
-                ) : null}
-
-                {meta.lon !== undefined && meta.lon !== null ? (
-                  <div className="flex items-start justify-between gap-4">
-                    <span className="text-base-content/55">Longitude</span>
-                    <span className="text-right font-medium text-base-content">
-                      {formatNumber(meta.lon, 6)}
-                    </span>
-                  </div>
-                ) : null}
-
-                {meta.alt_m !== undefined && meta.alt_m !== null ? (
-                  <div className="flex items-start justify-between gap-4">
-                    <span className="text-base-content/55">Altitude</span>
-                    <span className="text-right font-medium text-base-content">
-                      {formatNumber(meta.alt_m, 1, " m")}
-                    </span>
-                  </div>
-                ) : null}
+              <div className="flex items-start justify-between gap-3 text-xs">
+                <span className="text-base-content/55">Value</span>
+                <span className="text-right font-medium text-base-content">
+                  {formatNumber(
+                    meta.yOriginal,
+                    valueDecimals,
+                    unit ? ` ${unit}` : "",
+                  )}
+                </span>
               </div>
             </div>
           );
@@ -220,15 +195,17 @@ export default function AnalyticsRechartsLineChart({
   height = 320,
 
   showLegend = true,
-  displayMode = "line", // line | points | line_points
-  lineWidth = 2,
-  pointRadius = 2.5,
+  displayMode = "line_points", // line | points | line_points
+  lineWidth = 2.25,
+  pointRadius = 3,
 
   yMinOverride = null,
   yMaxOverride = null,
   yPaddingPct = 0.12,
 
   seriesOffsetStep = 0,
+  valueDecimals = 2,
+  xTickFormatter = null,
 }) {
   const normalizedSeries = useMemo(
     () => normalizeSeries(series, seriesOffsetStep),
@@ -236,14 +213,17 @@ export default function AnalyticsRechartsLineChart({
   );
 
   const chartData = useMemo(
-    () => transformSeriesToRechartsData(normalizedSeries),
+    () => transformSeriesToChartData(normalizedSeries),
     [normalizedSeries],
   );
 
-  const yValues = useMemo(
-    () => buildAllYValues(normalizedSeries),
-    [normalizedSeries],
-  );
+  const yValues = useMemo(() => {
+    return normalizedSeries.flatMap((item) =>
+      item.points
+        .map((point) => Number(point.yOffset))
+        .filter((value) => Number.isFinite(value)),
+    );
+  }, [normalizedSeries]);
 
   if (!chartData.length) {
     return (
@@ -269,13 +249,11 @@ export default function AnalyticsRechartsLineChart({
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
-        <div className="min-w-0">
-          <div className="text-sm font-semibold text-base-content">{title}</div>
-          <div className="text-xs text-base-content/55">
-            {yLabel}
-            {unit ? ` (${unit})` : ""} vs {xLabel}
-          </div>
+      <div className="min-w-0">
+        <div className="text-sm font-semibold text-base-content">{title}</div>
+        <div className="text-xs text-base-content/55">
+          {yLabel}
+          {unit ? ` (${unit})` : ""} vs {xLabel}
         </div>
       </div>
 
@@ -284,36 +262,30 @@ export default function AnalyticsRechartsLineChart({
           <ResponsiveContainer>
             <LineChart
               data={chartData}
-              margin={{ top: 14, right: 16, left: 8, bottom: 8 }}
+              margin={{ top: 12, right: 16, left: 4, bottom: 8 }}
             >
-              <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.18} />
+              <CartesianGrid strokeDasharray="4 4" strokeOpacity={0.22} />
 
               <XAxis
                 dataKey="__x"
                 tick={{ fontSize: 11 }}
-                tickFormatter={(value) => {
-                  const numeric = Number(value);
-                  if (!Number.isFinite(numeric)) return "—";
-                  return numeric > 10_000_000_000
-                    ? new Date(numeric).toLocaleTimeString("ro-RO", {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                        second: "2-digit",
-                      })
-                    : new Date(numeric * 1000).toLocaleTimeString("ro-RO", {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                        second: "2-digit",
-                      });
+                minTickGap={20}
+                tickFormatter={(value, index) => {
+                  const row = chartData[index];
+                  if (row?.__label) return row.__label;
+                  if (typeof xTickFormatter === "function") {
+                    return xTickFormatter(value);
+                  }
+                  return String(value);
                 }}
-                minTickGap={24}
               />
 
               <YAxis
                 domain={finalDomain}
+                allowDecimals={valueDecimals > 0}
                 tick={{ fontSize: 11 }}
-                tickFormatter={(value) => formatNumber(value, 2)}
-                width={64}
+                width={52}
+                tickFormatter={(value) => formatNumber(value, valueDecimals)}
               />
 
               <Tooltip
@@ -321,6 +293,7 @@ export default function AnalyticsRechartsLineChart({
                   <CustomTooltip
                     unit={unit}
                     xLabel={xLabel}
+                    valueDecimals={valueDecimals}
                   />
                 }
               />
@@ -334,37 +307,31 @@ export default function AnalyticsRechartsLineChart({
                 />
               ) : null}
 
-              <ReferenceLine y={0} stroke="rgba(100,116,139,0.3)" />
-
-              {normalizedSeries.map((seriesItem) => {
-                const dataKey = seriesItem.id || seriesItem.label;
-
-                return (
-                  <Line
-                    key={dataKey}
-                    type="monotone"
-                    dataKey={dataKey}
-                    name={seriesItem.label}
-                    stroke={seriesItem.color}
-                    strokeWidth={showLines ? lineWidth : 0}
-                    dot={
-                      showDots
-                        ? {
-                            r: pointRadius,
-                            strokeWidth: 0,
-                            fill: seriesItem.color,
-                          }
-                        : false
-                    }
-                    activeDot={{
-                      r: Math.max(pointRadius + 2, 5),
-                      fill: seriesItem.color,
-                    }}
-                    connectNulls={false}
-                    isAnimationActive={false}
-                  />
-                );
-              })}
+              {normalizedSeries.map((seriesItem) => (
+                <Line
+                  key={seriesItem.dataKey}
+                  type="monotone"
+                  dataKey={seriesItem.dataKey}
+                  name={seriesItem.label}
+                  stroke={seriesItem.color}
+                  strokeWidth={showLines ? lineWidth : 0}
+                  dot={
+                    showDots
+                      ? {
+                          r: pointRadius,
+                          strokeWidth: 0,
+                          fill: seriesItem.color,
+                        }
+                      : false
+                  }
+                  activeDot={{
+                    r: Math.max(pointRadius + 2, 5),
+                    fill: seriesItem.color,
+                  }}
+                  connectNulls={false}
+                  isAnimationActive={false}
+                />
+              ))}
             </LineChart>
           </ResponsiveContainer>
         </div>
