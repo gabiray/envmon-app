@@ -1,95 +1,42 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { FiAlertTriangle, FiImage, FiNavigation } from "react-icons/fi";
-import { buildMissionImageUrl } from "../../services/analyticsApi";
+import React, { useMemo } from "react";
+import {
+  FiActivity,
+  FiAlertTriangle,
+  FiCompass,
+  FiMapPin,
+  FiNavigation,
+  FiTrendingUp,
+  FiWind,
+} from "react-icons/fi";
 
-function isFiniteNumber(value) {
-  return Number.isFinite(Number(value));
-}
+function formatSafe(formatNumber, value, decimals = 2, suffix = "") {
+  if (typeof formatNumber === "function") {
+    return formatNumber(value, decimals, suffix);
+  }
 
-function formatNumber(value, decimals = 2, suffix = "") {
-  if (!isFiniteNumber(value)) return "—";
-  return `${Number(value).toFixed(decimals)}${suffix}`;
-}
-
-function formatEpoch(epoch) {
-  if (!epoch) return "—";
-  try {
-    return new Date(Number(epoch) * 1000).toLocaleString("ro-RO", {
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    });
-  } catch {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) {
     return "—";
   }
-}
 
-function formatDurationSeconds(totalSeconds) {
-  if (!isFiniteNumber(totalSeconds)) return "—";
-
-  const seconds = Math.max(0, Math.round(Number(totalSeconds)));
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = seconds % 60;
-
-  if (h > 0) return `${h}h ${m}m ${s}s`;
-  if (m > 0) return `${m}m ${s}s`;
-  return `${s}s`;
-}
-
-function Badge({ children, tone = "default" }) {
-  const toneClass =
-    tone === "warning"
-      ? "border-warning/30 bg-warning/10 text-warning"
-      : tone === "success"
-        ? "border-success/30 bg-success/10 text-success"
-        : tone === "primary"
-          ? "border-primary/30 bg-primary/10 text-primary"
-          : "border-base-300 bg-base-200 text-base-content/75";
-
-  return (
-    <span
-      className={`inline-flex h-7 items-center rounded-full border px-3 text-xs font-medium ${toneClass}`}
-    >
-      {children}
-    </span>
-  );
-}
-
-function StatCard({ label, value, hint = "", tone = "default" }) {
-  const toneClass =
-    tone === "warning"
-      ? "border-warning/30 bg-warning/10"
-      : tone === "success"
-        ? "border-success/30 bg-success/10"
-        : "border-base-300 bg-base-100";
-
-  return (
-    <div className={`rounded-2xl border p-4 ${toneClass}`}>
-      <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-base-content/45">
-        {label}
-      </div>
-      <div className="mt-2 text-lg font-semibold text-base-content">{value}</div>
-      {hint ? <div className="mt-1 text-xs text-base-content/60">{hint}</div> : null}
-    </div>
-  );
+  return `${Number(value).toFixed(decimals)}${suffix}`;
 }
 
 function SectionCard({ title, description, icon: Icon, children }) {
   return (
-    <section className="rounded-3xl border border-base-300 bg-base-100 shadow-sm">
-      <div className="p-4 sm:p-5">
+    <section className="rounded-[2rem] border border-base-300 bg-base-100 shadow-sm">
+      <div className="p-5 sm:p-6">
         <div className="flex items-start gap-3">
           <div className="mt-0.5 rounded-xl border border-primary/20 bg-primary/10 p-2 text-primary">
             <Icon className="text-base" />
           </div>
 
           <div className="min-w-0">
-            <div className="text-base font-semibold text-base-content">{title}</div>
-            <div className="mt-1 text-sm text-base-content/60">{description}</div>
+            <div className="text-base font-semibold text-base-content">
+              {title}
+            </div>
+            <div className="mt-1 text-sm leading-6 text-base-content/60">
+              {description}
+            </div>
           </div>
         </div>
 
@@ -99,392 +46,321 @@ function SectionCard({ title, description, icon: Icon, children }) {
   );
 }
 
-export default function AnalyticsInsightsSection({
-  missionId,
-  activeMission,
-  telemetry = [],
-  images = [],
-  airAnomalies = { intervals: [] },
-  baselineComparison = null,
-  movementStats = {
-    stationaryPct: null,
-    stationaryDurationS: null,
-    totalDistanceM: null,
-    avgMovingSpeedMps: null,
-  },
-  densityCells = [],
-  denseTop = [],
-  carDenseGasComparison = null,
-  DensityMiniMap = null,
-}) {
-  const [selectedImageId, setSelectedImageId] = useState(null);
-
-  useEffect(() => {
-    setSelectedImageId(images?.[0]?.id || null);
-  }, [images]);
-
-  const selectedImage = useMemo(
-    () => images.find((image) => image.id === selectedImageId) || null,
-    [images, selectedImageId]
-  );
-
-  const correlatedTelemetry = useMemo(() => {
-    if (!selectedImage || !Array.isArray(telemetry) || telemetry.length === 0) {
-      return null;
-    }
-
-    let best = null;
-    let bestDelta = Number.POSITIVE_INFINITY;
-
-    telemetry.forEach((point) => {
-      const delta = Math.abs(
-        Number(point.ts_epoch || 0) - Number(selectedImage.ts_epoch || 0)
-      );
-
-      if (delta < bestDelta) {
-        best = point;
-        bestDelta = delta;
-      }
-    });
-
-    return best;
-  }, [selectedImage, telemetry]);
+function StatCard({ label, value, hint = "", tone = "default" }) {
+  const toneClass =
+    tone === "warning"
+      ? "border-warning/30 bg-warning/10"
+      : tone === "success"
+        ? "border-success/30 bg-success/10"
+        : tone === "info"
+          ? "border-info/30 bg-info/10"
+          : "border-base-300 bg-base-100";
 
   return (
-    <div className="space-y-6">
+    <div className={`rounded-2xl border p-4 ${toneClass}`}>
+      <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-base-content/45">
+        {label}
+      </div>
+      <div className="mt-2 text-lg font-semibold text-base-content">
+        {value}
+      </div>
+      {hint ? (
+        <div className="mt-1 text-xs leading-5 text-base-content/60">{hint}</div>
+      ) : null}
+    </div>
+  );
+}
+
+function InfoRow({ label, value }) {
+  return (
+    <div className="flex items-start justify-between gap-4 rounded-xl border border-base-300 bg-base-100 px-4 py-3">
+      <div className="text-sm text-base-content/60">{label}</div>
+      <div className="text-sm font-medium text-base-content text-right">
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function buildStatusTone(direction) {
+  if (direction === "up") return "warning";
+  if (direction === "down") return "info";
+  return "success";
+}
+
+export default function AnalyticsInsightsSection({
+  activeMission = null,
+  metric = "temp_c",
+  metricMeta = null,
+  stats = null,
+  trendSummary = null,
+  gpsQuality = null,
+  airAnomalies = null,
+  baselineComparison = null,
+  movementStats = null,
+  locationLabel = "Unknown location",
+  formatNumber,
+}) {
+  const profileType = String(activeMission?.profile_type || "")
+    .trim()
+    .toLowerCase();
+
+  const metricStats = useMemo(() => {
+    if (!stats || !metric) return null;
+    return stats?.[metric] || null;
+  }, [stats, metric]);
+
+  const anomaliesCount = Array.isArray(airAnomalies?.intervals)
+    ? airAnomalies.intervals.length
+    : 0;
+
+  const baselineDelta = baselineComparison?.deltaFromBaseline ?? null;
+  const baselineLabel = baselineComparison?.label || "No baseline context";
+
+  const totalDistanceKm =
+    Number.isFinite(movementStats?.totalDistanceM)
+      ? movementStats.totalDistanceM / 1000
+      : null;
+
+  const avgMovingSpeedKmh =
+    Number.isFinite(movementStats?.avgMovingSpeedMps)
+      ? movementStats.avgMovingSpeedMps * 3.6
+      : null;
+
+  if (!activeMission) {
+    return null;
+  }
+
+  return (
+    <div className="space-y-5">
       <SectionCard
-        title="Air quality"
-        description="Gas baseline comparison and persistent suspect intervals."
-        icon={FiAlertTriangle}
+        title="General insights"
+        description="High-level interpretation of the selected mission and the current metric context."
+        icon={FiActivity}
       >
-        <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-          <div className="space-y-5">
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-              <StatCard
-                label="Suspect intervals"
-                value={String(airAnomalies?.intervals?.length || 0)}
-                tone={airAnomalies?.intervals?.length ? "warning" : "default"}
-              />
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <StatCard
+            label="Trend direction"
+            value={trendSummary?.directionLabel || "—"}
+            hint="General behavior of the selected metric"
+            tone={buildStatusTone(trendSummary?.direction)}
+          />
 
-              <StatCard
-                label="Lowest gas value"
-                value={
-                  airAnomalies?.intervals?.length
-                    ? formatNumber(
-                        Math.min(...airAnomalies.intervals.map((item) => item.minValue)),
-                        0,
-                        " Ω"
-                      )
-                    : "—"
-                }
-              />
+          <StatCard
+            label="Metric average"
+            value={formatSafe(
+              formatNumber,
+              metricStats?.avg,
+              2,
+              metricMeta?.unit ? ` ${metricMeta.unit}` : "",
+            )}
+            hint={metricMeta?.label || "Selected metric"}
+          />
 
-              <StatCard
-                label="Total suspect duration"
-                value={
-                  airAnomalies?.intervals?.length
-                    ? formatDurationSeconds(
-                        airAnomalies.intervals.reduce(
-                          (acc, item) => acc + Number(item.durationS || 0),
-                          0
-                        )
-                      )
-                    : "—"
-                }
-              />
-            </div>
-          </div>
+          <StatCard
+            label="GPS quality"
+            value={gpsQuality?.label || "Unknown"}
+            hint="Estimated from available GPS diagnostics"
+            tone={
+              gpsQuality?.quality === "good"
+                ? "success"
+                : gpsQuality?.quality === "fair"
+                  ? "info"
+                  : gpsQuality?.quality === "poor"
+                    ? "warning"
+                    : "default"
+            }
+          />
 
-          <div className="space-y-4">
-            <div className="rounded-2xl border border-base-300 bg-base-100 p-4">
-              <div className="text-sm font-semibold">Baseline comparison</div>
-
-              <div className="mt-3 grid grid-cols-1 gap-3">
-                <div className="rounded-xl border border-base-300 bg-base-200/60 px-3 py-3">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-base-content/45">
-                    Baseline gas
-                  </div>
-                  <div className="mt-1 font-medium">
-                    {baselineComparison
-                      ? formatNumber(baselineComparison.baseline, 0, " Ω")
-                      : "No baseline"}
-                  </div>
-                </div>
-
-                <div className="rounded-xl border border-base-300 bg-base-200/60 px-3 py-3">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-base-content/45">
-                    Relative delta
-                  </div>
-                  <div className="mt-1 font-medium">
-                    {baselineComparison
-                      ? formatNumber(baselineComparison.deltaPct, 1, "%")
-                      : "—"}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="rounded-2xl border border-base-300 bg-base-100 p-4">
-              <div className="text-sm font-semibold">Suspect periods / areas</div>
-
-              <div className="mt-3 max-h-[340px] space-y-2 overflow-y-auto pr-1 custom-scrollbar">
-                {airAnomalies?.intervals?.length === 0 ? (
-                  <div className="rounded-xl border border-dashed border-base-300 px-3 py-6 text-center text-sm text-base-content/55">
-                    No persistent air-quality anomalies detected in the selected range.
-                  </div>
-                ) : (
-                  airAnomalies.intervals.map((interval, index) => (
-                    <div
-                      key={`${interval.startTs}-${index}`}
-                      className="rounded-xl border border-warning/30 bg-warning/10 px-3 py-3"
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="text-sm font-semibold text-warning">
-                          Suspect interval #{index + 1}
-                        </div>
-
-                        <Badge tone="warning">
-                          {formatDurationSeconds(interval.durationS)}
-                        </Badge>
-                      </div>
-
-                      <div className="mt-2 text-xs text-base-content/70">
-                        {formatEpoch(interval.startTs)} → {formatEpoch(interval.endTs)}
-                      </div>
-
-                      <div className="mt-2 text-sm text-base-content/80">
-                        Lowest gas value: {formatNumber(interval.minValue, 0, " Ω")}
-                      </div>
-
-                      {isFiniteNumber(interval.lat) && isFiniteNumber(interval.lon) ? (
-                        <div className="mt-1 text-xs text-base-content/60">
-                          Approx. area: {Number(interval.lat).toFixed(5)},{" "}
-                          {Number(interval.lon).toFixed(5)}
-                        </div>
-                      ) : null}
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-          </div>
+          <StatCard
+            label="Air anomalies"
+            value={String(anomaliesCount)}
+            hint="Detected intervals with unusual gas behavior"
+            tone={anomaliesCount > 0 ? "warning" : "success"}
+          />
         </div>
       </SectionCard>
 
       <SectionCard
-        title="Mobility / density"
-        description="Dense GPS areas, stationary time and route concentration."
-        icon={FiNavigation}
+        title="Mission context"
+        description="Contextual metadata useful before deeper profile-specific interpretation."
+        icon={FiMapPin}
       >
-        <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-          <div className="space-y-5">
-            {DensityMiniMap ? <DensityMiniMap cells={denseTop} /> : null}
+        <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+          <InfoRow
+            label="Mission"
+            value={activeMission?.mission_name || activeMission?.mission_id || "—"}
+          />
+          <InfoRow
+            label="Profile"
+            value={activeMission?.profile_label || activeMission?.profile_type || "—"}
+          />
+          <InfoRow
+            label="Status"
+            value={activeMission?.status || "—"}
+          />
+          <InfoRow
+            label="Location"
+            value={locationLabel || "Unknown location"}
+          />
+          <InfoRow
+            label="GPS availability"
+            value={activeMission?.has_gps ? "Available" : "Unavailable"}
+          />
+          <InfoRow
+            label="Metric focus"
+            value={metricMeta?.label || metric}
+          />
+        </div>
+      </SectionCard>
 
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-              <StatCard
-                label="Stationary time"
-                value={formatNumber(movementStats.stationaryPct, 0, "%")}
-                hint={formatDurationSeconds(movementStats.stationaryDurationS)}
-                tone={movementStats.stationaryPct > 35 ? "warning" : "default"}
-              />
-              <StatCard
-                label="Dense areas"
-                value={String(densityCells.length)}
-                hint="Grid cells with repeated valid GPS samples"
-              />
-              <StatCard
-                label="Total distance"
-                value={formatNumber(movementStats.totalDistanceM / 1000, 2, " km")}
-              />
-              <StatCard
-                label="Avg moving speed"
-                value={formatNumber(movementStats.avgMovingSpeedMps, 2, " m/s")}
-              />
-            </div>
-          </div>
+      <SectionCard
+        title="Metric interpretation"
+        description="Summary of the selected metric based on mission statistics and trend evolution."
+        icon={FiTrendingUp}
+      >
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <StatCard
+            label="Minimum"
+            value={formatSafe(
+              formatNumber,
+              metricStats?.min,
+              2,
+              metricMeta?.unit ? ` ${metricMeta.unit}` : "",
+            )}
+          />
+          <StatCard
+            label="Maximum"
+            value={formatSafe(
+              formatNumber,
+              metricStats?.max,
+              2,
+              metricMeta?.unit ? ` ${metricMeta.unit}` : "",
+            )}
+          />
+          <StatCard
+            label="Average"
+            value={formatSafe(
+              formatNumber,
+              metricStats?.avg,
+              2,
+              metricMeta?.unit ? ` ${metricMeta.unit}` : "",
+            )}
+          />
+          <StatCard
+            label="Delta"
+            value={trendSummary?.deltaLabel || "—"}
+            hint="Difference between the beginning and the end of the selected range"
+            tone={buildStatusTone(trendSummary?.direction)}
+          />
+        </div>
+      </SectionCard>
 
-          <div className="rounded-2xl border border-base-300 bg-base-100 p-4">
-            <div className="text-sm font-semibold">
-              {activeMission.profile_type === "car"
-                ? "Traffic-like zones"
-                : activeMission.profile_type === "bicycle"
-                  ? "Dense route segments"
-                  : activeMission.profile_type === "drone"
-                    ? "Coverage concentration"
-                    : "Dense sample zones"}
-            </div>
+      <SectionCard
+        title="Baseline and anomaly context"
+        description="Useful for identifying unusual environmental behavior in the selected range."
+        icon={FiWind}
+      >
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          <StatCard
+            label="Baseline delta"
+            value={formatSafe(formatNumber, baselineDelta, 2)}
+            hint={baselineLabel}
+            tone={
+              Number.isFinite(Number(baselineDelta)) && Math.abs(Number(baselineDelta)) > 0
+                ? "info"
+                : "default"
+            }
+          />
+          <StatCard
+            label="Anomaly intervals"
+            value={String(anomaliesCount)}
+            hint="Continuous intervals considered unusual"
+            tone={anomaliesCount > 0 ? "warning" : "success"}
+          />
+          <StatCard
+            label="Interpretation"
+            value={
+              anomaliesCount > 0
+                ? "Potential outliers detected"
+                : "No strong anomaly pattern"
+            }
+            hint="Quick overview of anomaly behavior"
+            tone={anomaliesCount > 0 ? "warning" : "success"}
+          />
+        </div>
+      </SectionCard>
 
-            <div className="mt-3 max-h-[430px] space-y-2 overflow-y-auto pr-1 custom-scrollbar">
-              {denseTop.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-base-300 px-3 py-6 text-center text-sm text-base-content/55">
-                  No dense GPS zones detected in the selected range.
-                </div>
-              ) : (
-                denseTop.map((cell, index) => (
-                  <div
-                    key={`${cell.cellKey || index}`}
-                    className="rounded-xl border border-base-300 bg-base-200/40 px-3 py-3"
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="text-sm font-semibold">Zone #{index + 1}</div>
-                      <Badge>{cell.samples || 0} samples</Badge>
-                    </div>
-
-                    <div className="mt-2 text-xs text-base-content/70">
-                      Center:{" "}
-                      {isFiniteNumber(cell.lat)
-                        ? Number(cell.lat).toFixed(5)
-                        : "—"}
-                      ,{" "}
-                      {isFiniteNumber(cell.lon)
-                        ? Number(cell.lon).toFixed(5)
-                        : "—"}
-                    </div>
-                  </div>
-                ))
+      {(profileType === "car" || profileType === "bicycle") && movementStats ? (
+        <SectionCard
+          title="Mobility snapshot"
+          description="General movement context for route-based monitoring missions."
+          icon={FiNavigation}
+        >
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <StatCard
+              label="Total distance"
+              value={formatSafe(formatNumber, totalDistanceKm, 2, " km")}
+            />
+            <StatCard
+              label="Avg moving speed"
+              value={formatSafe(formatNumber, avgMovingSpeedKmh, 1, " km/h")}
+            />
+            <StatCard
+              label="Stationary ratio"
+              value={formatSafe(
+                formatNumber,
+                movementStats?.stationaryPct,
+                0,
+                " %",
               )}
-            </div>
-
-            {activeMission?.profile_type === "car" && carDenseGasComparison ? (
-              <div className="mt-4 rounded-2xl border border-warning/30 bg-warning/10 p-4">
-                <div className="text-sm font-semibold text-warning">
-                  Dense zone gas comparison
-                </div>
-
-                <div className="mt-3 grid grid-cols-1 gap-3">
-                  <div className="rounded-xl border border-warning/30 bg-base-100 px-3 py-3">
-                    <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-base-content/45">
-                      Dense zones avg gas
-                    </div>
-                    <div className="mt-1 font-medium">
-                      {formatNumber(carDenseGasComparison.denseAvg, 0, " Ω")}
-                    </div>
-                  </div>
-
-                  <div className="rounded-xl border border-warning/30 bg-base-100 px-3 py-3">
-                    <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-base-content/45">
-                      Moving zones avg gas
-                    </div>
-                    <div className="mt-1 font-medium">
-                      {formatNumber(carDenseGasComparison.movingAvg, 0, " Ω")}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ) : null}
+              tone={
+                Number(movementStats?.stationaryPct) > 35
+                  ? "warning"
+                  : Number(movementStats?.stationaryPct) > 15
+                    ? "info"
+                    : "success"
+              }
+            />
+            <StatCard
+              label="Stationary duration"
+              value={formatSafe(
+                formatNumber,
+                movementStats?.stationaryDurationS,
+                0,
+                " s",
+              )}
+            />
           </div>
-        </div>
-      </SectionCard>
+        </SectionCard>
+      ) : null}
 
-      <SectionCard
-        title="Image correlation"
-        description="Inspect captured images and correlate them with nearby telemetry."
-        icon={FiImage}
-      >
-        {!Array.isArray(images) || images.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-base-300 bg-base-100 px-4 py-10 text-center text-sm text-base-content/55">
-            No images available for this mission.
+      {profileType === "drone" ? (
+        <SectionCard
+          title="Drone mission note"
+          description="Altitude and flight-path interpretation are available in the profile-specific section below."
+          icon={FiCompass}
+        >
+          <div className="rounded-2xl border border-base-300 bg-base-200/35 px-4 py-4 text-sm leading-6 text-base-content/70">
+            For drone missions, the most relevant specialized insights come from
+            altitude variation and aerial coverage context. These are shown in the
+            dedicated drone analysis section.
           </div>
-        ) : (
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
-            <div className="rounded-2xl border border-base-300 bg-base-100 p-3">
-              {selectedImage ? (
-                <img
-                  src={buildMissionImageUrl(missionId, selectedImage.id)}
-                  alt={selectedImage.filename}
-                  className="h-[320px] w-full rounded-xl object-cover"
-                />
-              ) : null}
+        </SectionCard>
+      ) : null}
 
-              {selectedImage ? (
-                <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
-                  <div className="rounded-xl border border-base-300 bg-base-200/60 px-3 py-3">
-                    <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-base-content/45">
-                      Image time
-                    </div>
-                    <div className="mt-1 font-medium">
-                      {formatEpoch(selectedImage.ts_epoch)}
-                    </div>
-                  </div>
-
-                  <div className="rounded-xl border border-base-300 bg-base-200/60 px-3 py-3">
-                    <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-base-content/45">
-                      Coordinates
-                    </div>
-                    <div className="mt-1 font-medium">
-                      {isFiniteNumber(selectedImage.lat) && isFiniteNumber(selectedImage.lon)
-                        ? `${Number(selectedImage.lat).toFixed(5)}, ${Number(selectedImage.lon).toFixed(5)}`
-                        : "No GPS"}
-                    </div>
-                  </div>
-
-                  {correlatedTelemetry ? (
-                    <>
-                      <div className="rounded-xl border border-base-300 bg-base-200/60 px-3 py-3">
-                        <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-base-content/45">
-                          Temperature
-                        </div>
-                        <div className="mt-1 font-medium">
-                          {formatNumber(correlatedTelemetry.temp_c, 2, " °C")}
-                        </div>
-                      </div>
-
-                      <div className="rounded-xl border border-base-300 bg-base-200/60 px-3 py-3">
-                        <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-base-content/45">
-                          Gas resistance
-                        </div>
-                        <div className="mt-1 font-medium">
-                          {formatNumber(correlatedTelemetry.gas_ohms, 0, " Ω")}
-                        </div>
-                      </div>
-                    </>
-                  ) : null}
-                </div>
-              ) : null}
-            </div>
-
-            <div className="rounded-2xl border border-base-300 bg-base-100 p-3">
-              <div className="mb-3 text-sm font-semibold">Image timeline</div>
-
-              <div className="max-h-[430px] space-y-2 overflow-y-auto pr-1 custom-scrollbar">
-                {images.map((image) => {
-                  const active = image.id === selectedImageId;
-
-                  return (
-                    <button
-                      key={image.id}
-                      type="button"
-                      onClick={() => setSelectedImageId(image.id)}
-                      className={`flex w-full items-center gap-3 rounded-xl border px-3 py-3 text-left transition ${
-                        active
-                          ? "border-primary/40 bg-primary/10"
-                          : "border-base-300 bg-base-100 hover:bg-base-200"
-                      }`}
-                    >
-                      <div className="h-14 w-18 overflow-hidden rounded-lg bg-base-200">
-                        <img
-                          src={buildMissionImageUrl(missionId, image.id)}
-                          alt={image.filename}
-                          className="h-full w-full object-cover"
-                        />
-                      </div>
-
-                      <div className="min-w-0">
-                        <div className="truncate text-sm font-medium">
-                          {image.filename}
-                        </div>
-                        <div className="mt-1 text-xs text-base-content/55">
-                          {formatEpoch(image.ts_epoch)}
-                        </div>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
+      {profileType === "static" ? (
+        <SectionCard
+          title="Static mission note"
+          description="Stability-focused interpretation is available in the profile-specific section below."
+          icon={FiCompass}
+        >
+          <div className="rounded-2xl border border-base-300 bg-base-200/35 px-4 py-4 text-sm leading-6 text-base-content/70">
+            For static monitoring, the most important aspect is the stability of
+            the selected metric over time and the absence of large drifts.
           </div>
-        )}
-      </SectionCard>
+        </SectionCard>
+      ) : null}
     </div>
   );
 }
