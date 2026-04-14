@@ -1,7 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import * as maptilersdk from "@maptiler/sdk";
 import "@maptiler/sdk/dist/maptiler-sdk.css";
+
 import { FiLayers, FiRotateCcw } from "react-icons/fi";
+import { FaCarSide } from "react-icons/fa";
+import { createRoot } from "react-dom/client";
 
 const MAPTILER_KEY = import.meta.env.VITE_MAPTILER_KEY;
 
@@ -157,35 +160,101 @@ function createPointMarkerElement({
 }
 
 function createLiveMarkerElement({ connected = true } = {}) {
-  const el = document.createElement("div");
-  el.style.width = "22px";
-  el.style.height = "22px";
-  el.style.borderRadius = "999px";
-  el.style.border = "3px solid white";
-  el.style.background = connected ? "#06b6d4" : "#f59e0b";
-  el.style.boxShadow = connected
-    ? "0 0 0 8px rgba(6,182,212,0.20), 0 8px 24px rgba(0,0,0,0.25)"
-    : "0 0 0 8px rgba(245,158,11,0.18), 0 8px 24px rgba(0,0,0,0.25)";
-  return el;
-}
+  const wrapper = document.createElement("div");
+  wrapper.style.position = "relative";
+  wrapper.style.width = "28px";
+  wrapper.style.height = "28px";
+  wrapper.style.pointerEvents = "none";
+  wrapper.style.display = "flex";
+  wrapper.style.alignItems = "center";
+  wrapper.style.justifyContent = "center";
 
-function formatTelemetryValue(value, decimals = 2, suffix = "") {
-  if (value == null || Number.isNaN(Number(value))) return "—";
-  return `${Number(value).toFixed(decimals)}${suffix}`;
-}
-
-function formatTelemetryTime(tsEpoch) {
-  if (!tsEpoch) return "—";
-
-  try {
-    return new Date(Number(tsEpoch) * 1000).toLocaleTimeString("ro-RO", {
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    });
-  } catch {
-    return "—";
+  // keyframes adăugate o singură dată
+  if (!document.getElementById("live-marker-pulse-style")) {
+    const style = document.createElement("style");
+    style.id = "live-marker-pulse-style";
+    style.textContent = `
+      @keyframes liveMarkerPulse {
+        0% {
+          transform: translate(-50%, -50%) scale(1);
+          opacity: 0.75;
+        }
+        70% {
+          transform: translate(-50%, -50%) scale(2.1);
+          opacity: 0;
+        }
+        100% {
+          transform: translate(-50%, -50%) scale(2.1);
+          opacity: 0;
+        }
+      }
+    `;
+    document.head.appendChild(style);
   }
+
+  const pulse = document.createElement("div");
+  pulse.style.position = "absolute";
+  pulse.style.left = "50%";
+  pulse.style.top = "50%";
+  pulse.style.width = "24px";
+  pulse.style.height = "24px";
+  pulse.style.borderRadius = "999px";
+  pulse.style.background = connected
+    ? "rgba(37,99,235,0.32)"
+    : "rgba(245,158,11,0.32)";
+  pulse.style.boxShadow = connected
+    ? "0 0 0 1px rgba(37,99,235,0.18)"
+    : "0 0 0 1px rgba(245,158,11,0.18)";
+  pulse.style.animation = "liveMarkerPulse 1.5s ease-out infinite";
+  pulse.style.zIndex = "0";
+
+  const pin = document.createElement("div");
+  pin.style.position = "relative";
+  pin.style.width = "24px";
+  pin.style.height = "24px";
+  pin.style.borderRadius = "999px";
+  pin.style.border = "2px solid white";
+  pin.style.background = connected ? "#2563eb" : "#f59e0b";
+  pin.style.boxShadow = connected
+    ? "0 8px 20px rgba(37,99,235,0.28)"
+    : "0 8px 20px rgba(245,158,11,0.28)";
+  pin.style.display = "flex";
+  pin.style.alignItems = "center";
+  pin.style.justifyContent = "center";
+  pin.style.zIndex = "2";
+  pin.style.boxSizing = "border-box";
+
+  const tail = document.createElement("div");
+  tail.style.position = "absolute";
+  tail.style.left = "50%";
+  tail.style.bottom = "3px";
+  tail.style.width = "9px";
+  tail.style.height = "9px";
+  tail.style.background = connected ? "#2563eb" : "#f59e0b";
+  tail.style.borderRight = "2px solid white";
+  tail.style.borderBottom = "2px solid white";
+  tail.style.transform = "translateX(-50%) rotate(45deg)";
+  tail.style.borderBottomRightRadius = "2px";
+  tail.style.zIndex = "1";
+  tail.style.boxSizing = "border-box";
+
+  const iconWrap = document.createElement("div");
+  iconWrap.style.display = "flex";
+  iconWrap.style.alignItems = "center";
+  iconWrap.style.justifyContent = "center";
+  iconWrap.style.width = "18px";
+  iconWrap.style.height = "18px";
+  iconWrap.style.color = "white";
+
+  const root = createRoot(iconWrap);
+  root.render(<FaCarSide size={14} />);
+
+  pin.appendChild(iconWrap);
+  wrapper.appendChild(pulse);
+  wrapper.appendChild(tail);
+  wrapper.appendChild(pin);
+
+  return wrapper;
 }
 
 export default function MissionDashboardMap({
@@ -198,6 +267,8 @@ export default function MissionDashboardMap({
   liveMapEnabled = false,
   liveConnected = false,
   liveTelemetry = null,
+  focusOnVehicle = false,
+  vehicleFollowMode = "nav2d",
   onMapPick = () => {},
   onSelectStartPoint = () => {},
 }) {
@@ -220,7 +291,7 @@ export default function MissionDashboardMap({
     [startPoints, selectedStartPointId],
   );
 
-  function clearMarkers() {
+  function clearStaticMarkers() {
     markersRef.current.forEach((item) => {
       try {
         item.remove();
@@ -242,6 +313,10 @@ export default function MissionDashboardMap({
       gpsPreviewMarkerRef.current?.remove();
     } catch {}
     gpsPreviewMarkerRef.current = null;
+  }
+
+  function clearAllMarkers() {
+    clearStaticMarkers();
 
     try {
       liveMarkerRef.current?.remove();
@@ -254,7 +329,7 @@ export default function MissionDashboardMap({
   useEffect(() => {
     if (!mapNodeRef.current || !MAPTILER_KEY) return;
 
-    clearMarkers();
+    clearAllMarkers();
 
     const fallbackCamera = getCameraPreset(mapPerspective);
     const previousView = lastViewRef.current;
@@ -316,7 +391,7 @@ export default function MissionDashboardMap({
     mapRef.current = map;
 
     return () => {
-      clearMarkers();
+      clearAllMarkers();
 
       try {
         const center = map.getCenter?.();
@@ -356,7 +431,7 @@ export default function MissionDashboardMap({
     const map = mapRef.current;
     if (!map) return;
 
-    clearMarkers();
+    clearStaticMarkers();
 
     for (const point of startPoints) {
       const lat = Number(point?.latlng?.lat);
@@ -466,6 +541,8 @@ export default function MissionDashboardMap({
     const map = mapRef.current;
     if (!map) return;
 
+    if (focusOnVehicle) return;
+
     if (gpsPreviewPoint?.lat != null && gpsPreviewPoint?.lng != null) {
       fitCoords(
         map,
@@ -515,22 +592,27 @@ export default function MissionDashboardMap({
     pendingMapPick,
     startPoints,
     mapPerspective,
+    focusOnVehicle,
   ]);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
 
-    if (!liveMapEnabled || !missionRunning) {
+    const lat = Number(liveTelemetry?.lat);
+    const lon = Number(liveTelemetry?.lon);
+
+    if (
+      !focusOnVehicle ||
+      !liveMapEnabled ||
+      Number.isNaN(lat) ||
+      Number.isNaN(lon)
+    ) {
       try {
         liveMarkerRef.current?.remove();
       } catch {}
       liveMarkerRef.current = null;
       liveFocusedRef.current = false;
-      return;
-    }
-
-    if (liveTelemetry?.lat == null || liveTelemetry?.lon == null) {
       return;
     }
 
@@ -542,20 +624,10 @@ export default function MissionDashboardMap({
       element: createLiveMarkerElement({ connected: liveConnected }),
       anchor: "center",
     })
-      .setLngLat([Number(liveTelemetry.lon), Number(liveTelemetry.lat)])
+      .setLngLat([lon, lat])
       .addTo(map);
 
     liveMarkerRef.current = marker;
-
-    if (!liveFocusedRef.current) {
-      map.flyTo({
-        center: [Number(liveTelemetry.lon), Number(liveTelemetry.lat)],
-        zoom: 16.2,
-        essential: true,
-        speed: 0.9,
-      });
-      liveFocusedRef.current = true;
-    }
 
     return () => {
       try {
@@ -567,16 +639,77 @@ export default function MissionDashboardMap({
     };
   }, [
     mapVersion,
+    focusOnVehicle,
     liveMapEnabled,
-    missionRunning,
     liveConnected,
     liveTelemetry?.lat,
     liveTelemetry?.lon,
   ]);
 
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    const lat = Number(liveTelemetry?.lat);
+    const lon = Number(liveTelemetry?.lon);
+
+    if (
+      !focusOnVehicle ||
+      !liveConnected ||
+      Number.isNaN(lat) ||
+      Number.isNaN(lon)
+    ) {
+      liveFocusedRef.current = false;
+      return;
+    }
+
+    const center = [lon, lat];
+
+    if (vehicleFollowMode === "nav3d") {
+      if (mapPerspective !== "3d") {
+        setMapPerspective("3d");
+        return;
+      }
+
+      map.easeTo({
+        center,
+        zoom: 16.4,
+        pitch: 64,
+        bearing: 0,
+        duration: liveFocusedRef.current ? 800 : 1100,
+        essential: true,
+      });
+    } else {
+      if (mapPerspective !== "2d") {
+        setMapPerspective("2d");
+        return;
+      }
+
+      map.easeTo({
+        center,
+        zoom: 16.2,
+        pitch: 0,
+        bearing: 0,
+        duration: liveFocusedRef.current ? 700 : 1000,
+        essential: true,
+      });
+    }
+
+    liveFocusedRef.current = true;
+  }, [
+    focusOnVehicle,
+    vehicleFollowMode,
+    liveConnected,
+    liveTelemetry?.lat,
+    liveTelemetry?.lon,
+    mapPerspective,
+  ]);
+
   function handleReset() {
     const map = mapRef.current;
     if (!map) return;
+
+    liveFocusedRef.current = false;
 
     const camera = getCameraPreset(mapPerspective);
 
@@ -603,107 +736,7 @@ export default function MissionDashboardMap({
           </div>
         </div>
       ) : (
-        <>
-          {missionRunning && liveMapEnabled ? (
-            <div className="pointer-events-none absolute left-4 right-4 top-4 z-20">
-              <div className="rounded-2xl border border-base-300 bg-base-100/92 p-3 shadow-lg backdrop-blur">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="text-sm font-semibold text-base-content">
-                    Live telemetry
-                  </div>
-
-                  <span
-                    className={`badge badge-sm ${
-                      liveConnected ? "badge-success" : "badge-warning"
-                    }`}
-                  >
-                    {liveConnected ? "Live" : "Reconnecting"}
-                  </span>
-                </div>
-
-                <div className="mt-3 grid grid-cols-2 gap-2 md:grid-cols-4 xl:grid-cols-8">
-                  <div className="rounded-xl border border-base-300 bg-base-100 px-3 py-2">
-                    <div className="text-[11px] uppercase tracking-wide text-base-content/45">
-                      Temp
-                    </div>
-                    <div className="mt-1 text-sm font-semibold">
-                      {formatTelemetryValue(liveTelemetry?.temp_c, 1, " °C")}
-                    </div>
-                  </div>
-
-                  <div className="rounded-xl border border-base-300 bg-base-100 px-3 py-2">
-                    <div className="text-[11px] uppercase tracking-wide text-base-content/45">
-                      Hum
-                    </div>
-                    <div className="mt-1 text-sm font-semibold">
-                      {formatTelemetryValue(liveTelemetry?.hum_pct, 1, " %")}
-                    </div>
-                  </div>
-
-                  <div className="rounded-xl border border-base-300 bg-base-100 px-3 py-2">
-                    <div className="text-[11px] uppercase tracking-wide text-base-content/45">
-                      Pressure
-                    </div>
-                    <div className="mt-1 text-sm font-semibold">
-                      {formatTelemetryValue(
-                        liveTelemetry?.press_hpa,
-                        1,
-                        " hPa",
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="rounded-xl border border-base-300 bg-base-100 px-3 py-2">
-                    <div className="text-[11px] uppercase tracking-wide text-base-content/45">
-                      Gas
-                    </div>
-                    <div className="mt-1 text-sm font-semibold">
-                      {formatTelemetryValue(liveTelemetry?.gas_ohms, 0, " Ω")}
-                    </div>
-                  </div>
-
-                  <div className="rounded-xl border border-base-300 bg-base-100 px-3 py-2">
-                    <div className="text-[11px] uppercase tracking-wide text-base-content/45">
-                      Satellites
-                    </div>
-                    <div className="mt-1 text-sm font-semibold">
-                      {formatTelemetryValue(liveTelemetry?.satellites, 0)}
-                    </div>
-                  </div>
-
-                  <div className="rounded-xl border border-base-300 bg-base-100 px-3 py-2">
-                    <div className="text-[11px] uppercase tracking-wide text-base-content/45">
-                      HDOP
-                    </div>
-                    <div className="mt-1 text-sm font-semibold">
-                      {formatTelemetryValue(liveTelemetry?.hdop, 2)}
-                    </div>
-                  </div>
-
-                  <div className="rounded-xl border border-base-300 bg-base-100 px-3 py-2">
-                    <div className="text-[11px] uppercase tracking-wide text-base-content/45">
-                      Alt
-                    </div>
-                    <div className="mt-1 text-sm font-semibold">
-                      {formatTelemetryValue(liveTelemetry?.alt_m, 1, " m")}
-                    </div>
-                  </div>
-
-                  <div className="rounded-xl border border-base-300 bg-base-100 px-3 py-2">
-                    <div className="text-[11px] uppercase tracking-wide text-base-content/45">
-                      Updated
-                    </div>
-                    <div className="mt-1 text-sm font-semibold">
-                      {formatTelemetryTime(liveTelemetry?.ts_epoch)}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          ) : null}
-
-          <div ref={mapNodeRef} className="h-full w-full" />
-        </>
+        <div ref={mapNodeRef} className="h-full w-full" />
       )}
 
       <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-start justify-between gap-3 p-4">

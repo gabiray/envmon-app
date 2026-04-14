@@ -1,18 +1,30 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { NavLink } from "react-router-dom";
 import { FiGrid, FiMap, FiList, FiBarChart2, FiRadio } from "react-icons/fi";
 import droneLogo from "../../assets/drone.png";
 import styles from "../AppShell.module.css";
 
-const NAV_ITEMS = [
-  { to: "/dashboard", label: "Dashboard", Icon: FiGrid },
-  { to: "/mission-control", label: "Mission Control", Icon: FiRadio },
-  { to: "/heatmap", label: "HeatMap", Icon: FiMap },
-  { to: "/missions", label: "Missions", Icon: FiList },
-  { to: "/analytics", label: "Analytics", Icon: FiBarChart2 },
-];
+function getDashboardRoute(profileType) {
+  switch (profileType) {
+    case "car":
+      return "/dashboard-car";
+    default:
+      return "/dashboard";
+  }
+}
 
-export default function Sidebar() {
+export default function Sidebar({ selectedProfileType = "drone" }) {
+  const navItems = useMemo(
+    () => [
+      { to: getDashboardRoute(selectedProfileType), label: "Dashboard", Icon: FiGrid },
+      { to: "/mission-control", label: "Mission Control", Icon: FiRadio },
+      { to: "/heatmap", label: "HeatMap", Icon: FiMap },
+      { to: "/missions", label: "Missions", Icon: FiList },
+      { to: "/analytics", label: "Analytics", Icon: FiBarChart2 },
+    ],
+    [selectedProfileType],
+  );
+
   return (
     <aside className={styles.sidebar}>
       <div className={styles.brand}>
@@ -26,9 +38,9 @@ export default function Sidebar() {
       </div>
 
       <nav className={styles.nav}>
-        {NAV_ITEMS.map(({ to, label, Icon }) => (
+        {navItems.map(({ to, label, Icon }) => (
           <NavLink
-            key={to}
+            key={`${label}-${to}`}
             to={to}
             className={({ isActive }) =>
               `${styles.navItem} ${isActive ? styles.active : ""}`
@@ -39,16 +51,6 @@ export default function Sidebar() {
           </NavLink>
         ))}
       </nav>
-
-      <div className={styles.footer}>
-        <div className={styles.user}>
-          <div className={styles.avatar}>G</div>
-          <div className={styles.userMeta}>
-            <div className={styles.userName}>Gabriel</div>
-            <div className={styles.userRole}>Operator</div>
-          </div>
-        </div>
-      </div>
     </aside>
   );
 }

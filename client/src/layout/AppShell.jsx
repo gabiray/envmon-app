@@ -13,6 +13,7 @@ import {
 } from "../services/devicesApi";
 
 const ROUTE_META = [
+  { path: "/dashboard-car", title: "Dashboard" },
   { path: "/dashboard", title: "Dashboard" },
   { path: "/mission-control", title: "Mission Control" },
   { path: "/heatmap", title: "HeatMap" },
@@ -49,6 +50,7 @@ export default function AppShell() {
   async function refresh() {
     const data = await listDevices();
     setDevicesRaw(data.devices ?? []);
+    return data.devices ?? [];
   }
 
   async function loadProfiles() {
@@ -105,26 +107,42 @@ export default function AppShell() {
 
     try {
       await selectDevice(id);
+
+      const nextDevices = await refresh();
+
+      if (!id || id === "none") {
+        return { ok: true, profileType: "drone" };
+      }
+
+      const selected = nextDevices.find((d) => d.device_uuid === id);
+
+      return {
+        ok: true,
+        profileType: selected?.active_profile_type || "drone",
+      };
     } catch (e) {
       setError(e?.response?.data?.error || e?.message || "Select failed");
+      return { ok: false };
     }
   }
 
   async function handleProfileChange(profileType) {
-    if (!selectedDeviceId || selectedDeviceId === "none") return;
+    if (!selectedDeviceId || selectedDeviceId === "none") return false;
 
     const profile = profiles.find((p) => p.type === profileType);
-    if (!profile) return;
+    if (!profile) return false;
 
     setError("");
 
     try {
       await setDeviceProfile(selectedDeviceId, profile.type, profile.label);
       await refresh();
+      return true;
     } catch (e) {
       setError(
         e?.response?.data?.error || e?.message || "Profile update failed",
       );
+      return false;
     }
   }
 
@@ -231,7 +249,7 @@ export default function AppShell() {
 
         <div className="drawer-side">
           <label htmlFor="envmon-drawer" className="drawer-overlay" />
-          <Sidebar />
+          <Sidebar selectedProfileType={selectedProfileType} />
         </div>
       </div>
 

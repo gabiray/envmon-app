@@ -35,17 +35,22 @@ function MissionCheckbox({ checked }) {
 
 function MissionRow({ mission, checked, onToggle }) {
   const imported = Boolean(mission.imported);
-  
-  const displayName = mission.mission_name && mission.mission_name.trim() !== "" 
-    ? mission.mission_name 
-    : mission.mission_id || "Unknown Mission";
+
+  const displayName =
+    mission.mission_name && mission.mission_name.trim() !== ""
+      ? mission.mission_name
+      : mission.mission_id || "Unknown Mission";
 
   return (
     <button
       type="button"
       onClick={() => onToggle(mission.mission_id)}
-      className={`group flex w-full items-start gap-3 rounded-2xl border px-3 py-3 text-left transition-colors duration-200 
-        ${checked ? "border-primary/50 bg-primary/5" : "border-base-300 bg-base-100 hover:bg-base-200/80"}`}
+      className={`group flex w-full items-start gap-3 rounded-2xl border px-3 py-3 text-left transition-colors duration-200
+        ${
+          checked
+            ? "border-primary/50 bg-primary/5"
+            : "border-base-300 bg-base-100 hover:bg-base-200/80"
+        }`}
     >
       <div className="pt-0.5">
         <MissionCheckbox checked={checked} />
@@ -54,7 +59,11 @@ function MissionRow({ mission, checked, onToggle }) {
       <div className="min-w-0 flex-1">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <div className={`truncate text-sm font-semibold ${checked ? "text-primary" : "text-base-content"}`}>
+            <div
+              className={`truncate text-sm font-semibold ${
+                checked ? "text-primary" : "text-base-content"
+              }`}
+            >
               {displayName}
             </div>
             <div className="mt-1 truncate font-mono text-[11px] text-base-content/50">
@@ -111,13 +120,16 @@ export default function MissionSyncPanel({
   onImportSelected = () => {},
   onImportNew = () => {},
   loading = false,
-  importing = false,
+  importing = null, // null | "new" | "selected" | "reimport"
   canImport = true,
   defaultExpanded = false,
 }) {
   const [expanded, setExpanded] = useState(defaultExpanded);
 
-  const selectedSet = useMemo(() => new Set(selectedMissionIds), [selectedMissionIds]);
+  const selectedSet = useMemo(
+    () => new Set(selectedMissionIds),
+    [selectedMissionIds],
+  );
 
   const filteredMissions = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -130,7 +142,6 @@ export default function MissionSyncPanel({
     });
   }, [missions, search]);
 
-  // Limităm afișarea la maxim 100 de elemente pentru performanță
   const DISPLAY_LIMIT = 100;
   const displayedMissions = filteredMissions.slice(0, DISPLAY_LIMIT);
   const hasMoreMissions = filteredMissions.length > DISPLAY_LIMIT;
@@ -138,23 +149,24 @@ export default function MissionSyncPanel({
   const selectedCount = selectedMissionIds.length;
   const newCount = missions.filter((m) => !m.imported).length;
 
+  const isImportingAny = Boolean(importing);
+  const isImportingNew = importing === "new";
+  const isImportingSelected = importing === "selected";
+
   return (
     <section className="overflow-hidden rounded-3xl border border-base-300 bg-base-100 text-base-content shadow-sm">
       <div className="p-4 sm:p-5">
-        
-        {/* Header */}
         <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <FiDatabase className="text-primary" />
               <h2 className="text-base font-semibold">Mission sync</h2>
             </div>
-            
+
             <p className="mt-1 text-sm text-base-content/60">
               Manage and import missions from the active device
             </p>
 
-            {/* Badge-uri - Fara "Selected" */}
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <span className="inline-flex h-8 items-center rounded-full border border-base-300 bg-base-200 px-3 text-xs font-medium text-base-content/80">
                 Total {missions.length}
@@ -166,34 +178,36 @@ export default function MissionSyncPanel({
           </div>
 
           <div className="flex items-center gap-2 self-start">
-            {/* Buton Refresh stilizat la fel ca Check Status */}
             <button
               className="btn btn-sm btn-primary rounded-xl text-white border-none"
               onClick={onRefresh}
-              disabled={loading}
+              disabled={loading || isImportingAny}
             >
-              {loading ? <span className="loading loading-spinner loading-xs" /> : <FiRefreshCw />}
+              {loading ? (
+                <span className="loading loading-spinner loading-xs" />
+              ) : (
+                <FiRefreshCw />
+              )}
               {loading ? "Refreshing..." : "Refresh"}
             </button>
 
-            {/* Buton Expandare */}
             <button
               className="btn btn-sm btn-circle btn-ghost border border-base-300 bg-base-200 hover:bg-base-300"
               onClick={() => setExpanded((prev) => !prev)}
               aria-label="Toggle sync panel"
             >
-              <FiChevronDown className={`transition-transform duration-200 ${expanded ? "rotate-180" : ""}`} />
+              <FiChevronDown
+                className={`transition-transform duration-200 ${
+                  expanded ? "rotate-180" : ""
+                }`}
+              />
             </button>
           </div>
         </div>
 
-        {/* Zona Expandabilă */}
         {expanded && (
           <div className="mt-5 animate-in fade-in slide-in-from-top-2 duration-300">
-            
-            {/* Action Bar & Search */}
             <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between rounded-2xl border border-base-300 bg-base-200/50 p-3">
-              
               <div className="flex-1 w-full lg:max-w-md">
                 <label className="flex items-center gap-2 rounded-xl border border-base-300 bg-base-100 px-3 py-2 shadow-sm focus-within:border-primary/50 focus-within:ring-1 focus-within:ring-primary/50 transition-all">
                   <FiSearch className="text-base-content/40" />
@@ -208,37 +222,52 @@ export default function MissionSyncPanel({
               </div>
 
               <div className="flex flex-wrap items-center gap-2 shrink-0 self-start lg:self-center">
-                {/* Butonul Import New in loc de Select Visible */}
                 <button
                   type="button"
                   className="btn btn-sm bg-base-100 border border-base-300 hover:bg-base-200 text-base-content rounded-xl font-medium"
                   onClick={onImportNew}
-                  disabled={!canImport || importing || newCount === 0}
+                  disabled={!canImport || isImportingAny || newCount === 0}
                 >
-                  <FiDownload className={newCount > 0 ? "text-primary" : "text-base-content/40"} />
-                  Import new ({newCount})
+                  {isImportingNew ? (
+                    <span className="loading loading-spinner loading-xs" />
+                  ) : (
+                    <FiDownload
+                      className={
+                        newCount > 0 ? "text-primary" : "text-base-content/40"
+                      }
+                    />
+                  )}
+                  {isImportingNew
+                    ? "Importing new..."
+                    : `Import new (${newCount})`}
                 </button>
 
-                {/* Butonul Import Selected fixat */}
                 <button
                   type="button"
                   className="btn btn-sm bg-primary hover:bg-primary/90 text-white border-none rounded-xl"
                   onClick={onImportSelected}
-                  disabled={!canImport || importing || selectedCount === 0}
+                  disabled={!canImport || isImportingAny || selectedCount === 0}
                 >
-                  {importing ? <span className="loading loading-spinner loading-xs" /> : <FiFolderPlus />}
-                  Import selected ({selectedCount})
+                  {isImportingSelected ? (
+                    <span className="loading loading-spinner loading-xs" />
+                  ) : (
+                    <FiFolderPlus />
+                  )}
+                  {isImportingSelected
+                    ? "Importing selected..."
+                    : `Import selected (${selectedCount})`}
                 </button>
               </div>
             </div>
 
-            {/* Mission List */}
             <div className="mt-4 rounded-2xl border border-base-300 bg-base-200/30 p-2">
               {filteredMissions.length === 0 ? (
                 <div className="flex min-h-64 flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-base-300 bg-base-100 p-6 text-center text-sm text-base-content/50">
                   <FiDatabase className="text-3xl text-base-content/20 mb-2" />
                   <p>No missions found.</p>
-                  {search && <p className="text-xs">Try adjusting your search query.</p>}
+                  {search && (
+                    <p className="text-xs">Try adjusting your search query.</p>
+                  )}
                 </div>
               ) : (
                 <div className="max-h-104 overflow-y-auto pr-1 space-y-2 custom-scrollbar">
@@ -250,18 +279,17 @@ export default function MissionSyncPanel({
                       onToggle={onToggleMission}
                     />
                   ))}
-                  
-                  {/* Mesaj informativ daca depasim limita afisata */}
+
                   {hasMoreMissions && (
                     <div className="py-4 text-center text-xs text-base-content/50 font-medium">
-                      Showing {DISPLAY_LIMIT} of {filteredMissions.length} missions. <br className="sm:hidden" />
+                      Showing {DISPLAY_LIMIT} of {filteredMissions.length} missions.
+                      <br className="sm:hidden" />
                       Use the search bar to find specific older missions.
                     </div>
                   )}
                 </div>
               )}
             </div>
-
           </div>
         )}
       </div>

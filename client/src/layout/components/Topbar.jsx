@@ -9,6 +9,7 @@ import {
 import { FaCarSide } from "react-icons/fa";
 import { MdDirectionsBike } from "react-icons/md";
 import { TbDrone } from "react-icons/tb";
+import { useNavigate } from "react-router-dom";
 
 function getProfileMeta(type) {
   if (type === "drone") {
@@ -45,6 +46,15 @@ function getProfileMeta(type) {
   };
 }
 
+function getDashboardRoute(profileType) {
+  switch (profileType) {
+    case "car":
+      return "/dashboard-car";
+    default:
+      return "/dashboard";
+  }
+}
+
 export default function Topbar({
   pageTitle,
   devices = [],
@@ -61,6 +71,7 @@ export default function Topbar({
   newDevicesCount = 0,
 }) {
   const hasDevices = devices.length > 0;
+  const navigate = useNavigate();
 
   const selectedDevice = useMemo(() => {
     if (!hasDevices) return null;
@@ -78,6 +89,28 @@ export default function Topbar({
 
   const SelectedProfileIcon = selectedProfile.Icon;
 
+  async function handleProfileSelect(profileType) {
+    try {
+      const ok = await onProfileChange(profileType);
+      if (ok === false) return;
+
+      navigate(getDashboardRoute(profileType));
+    } catch (error) {
+      console.error("Failed to change profile", error);
+    }
+  }
+
+  async function handleDeviceSelect(deviceId) {
+    try {
+      const result = await onDeviceChange(deviceId);
+      if (!result || result.ok === false) return;
+
+      navigate(getDashboardRoute(result.profileType));
+    } catch (error) {
+      console.error("Failed to change device", error);
+    }
+  }
+
   return (
     <header className="sticky top-0 z-30">
       <div className="navbar bg-base-100/80 backdrop-blur border-b border-base-300 px-4">
@@ -91,7 +124,9 @@ export default function Topbar({
           </label>
 
           <div>
-            <div className="text-base font-semibold leading-tight">{pageTitle}</div>
+            <div className="text-base font-semibold leading-tight">
+              {pageTitle}
+            </div>
             <div className="text-xs opacity-60">EnvMon / {pageTitle}</div>
           </div>
         </div>
@@ -130,7 +165,7 @@ export default function Topbar({
                       <button
                         type="button"
                         className={d.id === selectedDevice?.id ? "active" : ""}
-                        onClick={() => onDeviceChange(d.id)}
+                        onClick={() => handleDeviceSelect(d.id)}
                       >
                         <FiCpu className="opacity-70 shrink-0" />
                         <div className="min-w-0 text-left">
@@ -178,7 +213,7 @@ export default function Topbar({
                         <button
                           type="button"
                           className={p.type === selectedProfileType ? "active" : ""}
-                          onClick={() => onProfileChange(p.type)}
+                          onClick={() => handleProfileSelect(p.type)}
                         >
                           <Icon className="opacity-80 shrink-0" />
                           <span>{p.label || meta.label}</span>
