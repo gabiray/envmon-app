@@ -23,3 +23,13 @@ export async function fetchAnalyticsMissionImages(missionId) {
 export function buildMissionImageUrl(missionId, imageId) {
   return `${api.defaults.baseURL}/db/missions/${missionId}/images/${imageId}/file`;
 }
+
+export async function fetchDbSummary() {
+  const { data } = await api.get("/db/summary");
+  return data;
+}
+
+export async function fetchDbMissions() {
+  const { data } = await api.get("/db/missions");
+  return data;
+}
