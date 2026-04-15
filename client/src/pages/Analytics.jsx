@@ -33,7 +33,6 @@ import {
   computeGpsQuality,
   computeMissionDuration,
   computeMovementStats,
-  computePointCellKey,
   computeStaticStability,
   computeTrendSummary,
   formatDurationSeconds,
@@ -97,7 +96,14 @@ function parseMissionIds(searchParams) {
   const csv = searchParams.get("missionIds");
   if (!csv) return [];
 
-  return [...new Set(csv.split(",").map((item) => item.trim()).filter(Boolean))];
+  return [
+    ...new Set(
+      csv
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean),
+    ),
+  ];
 }
 
 function getProfileMeta(type) {
@@ -136,107 +142,132 @@ function getProfileMeta(type) {
   return {
     label: "Unknown",
     Icon: FiCpu,
-    description: "Mission analysis",
+    description: "Mission analytics overview",
   };
 }
 
-function getMetricMeta(metric) {
-  return (
-    METRIC_OPTIONS.find((option) => option.value === metric) || METRIC_OPTIONS[0]
-  );
-}
-
-function buildLocationKey(mission) {
-  if (!mission) return null;
-
-  if (mission.location_name) {
-    return `name:${String(mission.location_name).trim().toLowerCase()}`;
-  }
-
-  const lat = mission?.start?.lat;
-  const lon = mission?.start?.lon;
-
-  if (isFiniteNumber(lat) && isFiniteNumber(lon)) {
-    return `coord:${Number(lat).toFixed(4)},${Number(lon).toFixed(4)}`;
-  }
-
-  return null;
+function normalizeTelemetry(rows = []) {
+  return (Array.isArray(rows) ? rows : [])
+    .map((row) => ({
+      ...row,
+      ts_epoch: Number(row?.ts_epoch),
+      lat: row?.lat != null ? Number(row.lat) : null,
+      lon: row?.lon != null ? Number(row.lon) : null,
+      alt_m: row?.alt_m != null ? Number(row.alt_m) : null,
+      fix_quality:
+        row?.fix_quality != null ? Number(row.fix_quality) : null,
+      satellites:
+        row?.satellites != null ? Number(row.satellites) : null,
+      hdop: row?.hdop != null ? Number(row.hdop) : null,
+      temp_c: row?.temp_c != null ? Number(row.temp_c) : null,
+      hum_pct: row?.hum_pct != null ? Number(row.hum_pct) : null,
+      press_hpa:
+        row?.press_hpa != null ? Number(row.press_hpa) : null,
+      gas_ohms: row?.gas_ohms != null ? Number(row.gas_ohms) : null,
+    }))
+    .filter((row) => Number.isFinite(row.ts_epoch));
 }
 
 function buildLocationLabel(mission) {
   if (!mission) return "Unknown location";
 
-  if (mission.location_name) return mission.location_name;
+  const explicit = String(mission.location_name || "").trim();
+  if (explicit) return explicit;
 
   const lat = mission?.start?.lat;
   const lon = mission?.start?.lon;
 
   if (isFiniteNumber(lat) && isFiniteNumber(lon)) {
-    return `${formatNumber(lat, 5)}, ${formatNumber(lon, 5)}`;
+    return `${Number(lat).toFixed(5)}, ${Number(lon).toFixed(5)}`;
   }
 
+  if (mission.location_mode === "fixed") return "Fixed point";
+  if (mission.location_mode === "gps") return "GPS";
   return "Unknown location";
 }
 
-function buildMissionOverview(mission) {
+function buildOverview(mission, telemetry = [], stats = null) {
   if (!mission) return null;
 
-  const durationSeconds = computeMissionDuration(
-    mission.started_at_epoch,
-    mission.ended_at_epoch,
-  );
-
-  const locationMode = String(mission.location_mode || "").trim().toLowerCase();
-  const locationSourceText =
-    locationMode === "gps"
-      ? "Location source: GPS"
-      : locationMode === "fixed"
-        ? "Location source: Fixed point"
-        : locationMode === "none"
-          ? "Location source: None"
-          : "Location source unknown";
+  const gpsValidCount = telemetry.filter((row) => isValidGpsPoint(row)).length;
+  const gpsGoodCount = telemetry.filter(
+    (row) =>
+      isValidGpsPoint(row) &&
+      Number(row.fix_quality || 0) > 0 &&
+      Number(row.hdop || 99) <= 4,
+  ).length;
 
   return {
-    startedText: formatEpoch(mission.started_at_epoch),
-    endedText: formatEpoch(mission.ended_at_epoch),
-    durationText: formatDurationSeconds(durationSeconds),
+    missionId: mission.mission_id,
+    missionName: mission.mission_name || mission.mission_id,
     statusText: mission.status || "Unknown",
+    startedAtText: formatEpoch(mission.started_at_epoch),
+    endedAtText: formatEpoch(mission.ended_at_epoch),
+    durationText: formatDurationSeconds(
+      computeMissionDuration(mission, telemetry),
+    ),
     locationText: buildLocationLabel(mission),
-    locationSourceText,
-    gpsText: mission.has_gps ? "GPS track available" : "No usable GPS track",
+    telemetryCount:
+      Number(stats?.samples) || telemetry.length || mission.telemetry_count || 0,
+    gpsText: `${gpsGoodCount}/${gpsValidCount} good GPS samples`,
     hasImages: Boolean(mission.has_images),
+    locationSourceText: mission.location_mode || "unknown",
   };
 }
 
-function EmptyState({ title, description }) {
-  return (
-    <section className="rounded-[2rem] border border-base-300 bg-base-100 shadow-sm">
-      <div className="p-8 sm:p-10">
-        <div className="flex max-w-xl flex-col items-center justify-center gap-4 text-center mx-auto">
-          <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-base-300 bg-base-200 text-base-content/55">
-            <FiActivity className="text-2xl" />
-          </div>
+function buildTrendSeriesForMission(
+  mission,
+  telemetry,
+  metric,
+  color = "#2563eb",
+  normalizeX = false,
+) {
+  if (!mission || !Array.isArray(telemetry) || telemetry.length === 0) {
+    return null;
+  }
 
-          <div>
-            <h2 className="text-xl font-semibold text-base-content">{title}</h2>
-            <p className="mt-2 text-sm leading-6 text-base-content/60">
-              {description}
-            </p>
-          </div>
-        </div>
-      </div>
-    </section>
-  );
+  let points = buildMetricSeries(telemetry, metric);
+
+  if (!Array.isArray(points) || points.length === 0) {
+    return null;
+  }
+
+  points = points.map((point, index) => {
+    const src = telemetry[index] || {};
+    return {
+      ...point,
+      lat: src.lat,
+      lon: src.lon,
+      alt_m: src.alt_m,
+      fix_quality: src.fix_quality,
+      satellites: src.satellites,
+      hdop: src.hdop,
+      ts_epoch: src.ts_epoch,
+    };
+  });
+
+  if (normalizeX && points.length > 0) {
+    const startX = Number(points[0].x || 0);
+    points = points.map((point) => ({
+      ...point,
+      x: Number(point.x || 0) - startX,
+    }));
+  }
+
+  return {
+    id: mission.mission_id,
+    label: mission.mission_name || mission.mission_id,
+    color,
+    points,
+  };
 }
 
 function LoadingState() {
   return (
-    <section className="rounded-[2rem] border border-base-300 bg-base-100 shadow-sm">
-      <div className="p-8 sm:p-10">
-        <div className="flex items-center justify-center gap-3 text-sm text-base-content/60">
-          <span className="loading loading-spinner loading-sm" />
-          Loading analytics...
-        </div>
+    <section className="rounded-[2rem] border border-base-300 bg-base-100 p-5 shadow-sm">
+      <div className="flex items-center gap-3 text-sm text-base-content/60">
+        <span className="loading loading-spinner loading-sm" />
+        Loading analytics...
       </div>
     </section>
   );
@@ -244,21 +275,19 @@ function LoadingState() {
 
 function ErrorState({ errorText, onRetry }) {
   return (
-    <section className="rounded-[2rem] border border-error/30 bg-error/10 shadow-sm">
-      <div className="p-6 sm:p-7">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2 text-error">
-              <FiAlertTriangle />
-              <h2 className="text-base font-semibold">Analytics unavailable</h2>
-            </div>
-
-            <p className="mt-2 text-sm text-base-content/75">{errorText}</p>
+    <section className="rounded-[2rem] border border-error/30 bg-error/10 p-5 shadow-sm">
+      <div className="flex items-start gap-3">
+        <FiAlertTriangle className="mt-0.5 text-error" />
+        <div className="min-w-0">
+          <div className="text-base font-semibold text-error">
+            Analytics unavailable
           </div>
-
+          <div className="mt-1 text-sm text-base-content/70">
+            {errorText}
+          </div>
           <button
             type="button"
-            className="btn btn-sm rounded-xl"
+            className="btn btn-sm rounded-xl mt-4"
             onClick={onRetry}
           >
             <FiRefreshCw />
@@ -270,41 +299,50 @@ function ErrorState({ errorText, onRetry }) {
   );
 }
 
+function EmptyState({
+  title = "No analytics data available",
+  description = "The selected missions could not be loaded or no compatible data is available yet.",
+}) {
+  return (
+    <AnalyticsEmptyState title={title} description={description} />
+  );
+}
+
 export default function Analytics() {
   const [searchParams] = useSearchParams();
-
   const missionIds = useMemo(
     () => parseMissionIds(searchParams),
     [searchParams],
   );
 
   const [missions, setMissions] = useState([]);
-  const [statsById, setStatsById] = useState({});
-  const [telemetryById, setTelemetryById] = useState({});
-  const [activeMissionId, setActiveMissionId] = useState(null);
+  const [telemetryMap, setTelemetryMap] = useState({});
+  const [statsMap, setStatsMap] = useState({});
 
   const [metric, setMetric] = useState("temp_c");
   const [rangePreset, setRangePreset] = useState("full");
+  const [gpsFilter, setGpsFilter] = useState("all");
   const [compareMode, setCompareMode] = useState("single");
-  const [smoothing, setSmoothing] = useState("low");
-  const [gpsFilter, setGpsFilter] = useState("valid");
+  const [smoothing, setSmoothing] = useState("off");
+
+  const [activeMissionId, setActiveMissionId] = useState("");
+  const [singleHeaderExpanded, setSingleHeaderExpanded] = useState(true);
 
   const [loading, setLoading] = useState(true);
   const [errorText, setErrorText] = useState("");
   const [reloadKey, setReloadKey] = useState(0);
-  const [singleHeaderExpanded, setSingleHeaderExpanded] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
 
-    async function loadAnalytics() {
+    async function loadData() {
       if (!missionIds.length) {
         setMissions([]);
-        setStatsById({});
-        setTelemetryById({});
-        setActiveMissionId(null);
-        setLoading(false);
+        setTelemetryMap({});
+        setStatsMap({});
+        setActiveMissionId("");
         setErrorText("");
+        setLoading(false);
         return;
       }
 
@@ -312,56 +350,66 @@ export default function Analytics() {
       setErrorText("");
 
       try {
-        const results = await Promise.all(
-          missionIds.map(async (missionId) => {
-            const [mission, stats, telemetry] = await Promise.all([
-              fetchAnalyticsMission(missionId),
-              fetchAnalyticsMissionStats(missionId),
-              fetchAnalyticsMissionTelemetry(missionId),
-            ]);
-
-            return { missionId, mission, stats, telemetry };
-          }),
-        );
+        const [missionResults, statsResults, telemetryResults] =
+          await Promise.all([
+            Promise.all(missionIds.map((id) => fetchAnalyticsMission(id))),
+            Promise.all(
+              missionIds.map((id) =>
+                fetchAnalyticsMissionStats(id).catch(() => null),
+              ),
+            ),
+            Promise.all(
+              missionIds.map((id) =>
+                fetchAnalyticsMissionTelemetry(id).catch(() => []),
+              ),
+            ),
+          ]);
 
         if (cancelled) return;
 
-        const missionItems = results
-          .map((result) => result.mission)
-          .filter(Boolean);
+        const loadedMissions = missionResults.filter(Boolean);
+        const nextTelemetryMap = {};
+        const nextStatsMap = {};
 
-        const nextStats = {};
-        const nextTelemetry = {};
-
-        results.forEach((result) => {
-          nextStats[result.missionId] = result.stats || null;
-          nextTelemetry[result.missionId] = Array.isArray(result.telemetry)
-            ? result.telemetry
-            : [];
+        missionIds.forEach((id, index) => {
+          nextTelemetryMap[id] = normalizeTelemetry(
+            telemetryResults[index] || [],
+          );
+          nextStatsMap[id] = statsResults[index] || null;
         });
 
-        setMissions(missionItems);
-        setStatsById(nextStats);
-        setTelemetryById(nextTelemetry);
-        setActiveMissionId((current) =>
-          current &&
-          missionItems.some((mission) => mission.mission_id === current)
-            ? current
-            : missionItems[0]?.mission_id || null,
-        );
+        setMissions(loadedMissions);
+        setTelemetryMap(nextTelemetryMap);
+        setStatsMap(nextStatsMap);
+
+        if (loadedMissions.length > 0) {
+          setActiveMissionId((prev) => {
+            if (
+              prev &&
+              loadedMissions.some((mission) => mission.mission_id === prev)
+            ) {
+              return prev;
+            }
+            return loadedMissions[0].mission_id;
+          });
+        } else {
+          setActiveMissionId("");
+        }
       } catch (error) {
         if (cancelled) return;
-        setErrorText(
-          error?.response?.data?.error ||
-            error?.message ||
-            "Failed to load analytics data.",
-        );
+        setErrorText(error?.message || "Failed to load analytics data.");
+        setMissions([]);
+        setTelemetryMap({});
+        setStatsMap({});
+        setActiveMissionId("");
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
     }
 
-    loadAnalytics();
+    loadData();
 
     return () => {
       cancelled = true;
@@ -371,125 +419,97 @@ export default function Analytics() {
   const isSingleMission = missions.length === 1;
   const isMultiMission = missions.length > 1;
 
-  const activeMission = useMemo(
-    () =>
+  const activeMission = useMemo(() => {
+    if (isSingleMission) return missions[0] || null;
+    return (
       missions.find((mission) => mission.mission_id === activeMissionId) ||
       missions[0] ||
-      null,
-    [missions, activeMissionId],
-  );
+      null
+    );
+  }, [missions, activeMissionId, isSingleMission]);
 
-  const profileTypes = useMemo(
-    () => [
-      ...new Set(
-        missions.map((mission) => mission.profile_type).filter(Boolean),
-      ),
-    ],
-    [missions],
-  );
-
-  const sameProfile = profileTypes.length <= 1;
-  const profileType = sameProfile
-    ? profileTypes[0] || activeMission?.profile_type || null
-    : null;
-
+  const profileType = activeMission?.profile_type || null;
   const activeProfileMeta = useMemo(
     () => getProfileMeta(profileType),
     [profileType],
   );
 
-  const locationKeys = useMemo(
-    () => [...new Set(missions.map(buildLocationKey).filter(Boolean))],
+  const allProfileTypes = useMemo(
+    () => [...new Set(missions.map((mission) => mission.profile_type).filter(Boolean))],
     [missions],
   );
 
-  const sameLocation = locationKeys.length <= 1;
+  const sameProfile = allProfileTypes.length <= 1;
 
-  const activeTelemetryRaw = activeMissionId
-    ? telemetryById[activeMissionId] || []
+  const allLocationLabels = useMemo(
+    () => [...new Set(missions.map((mission) => buildLocationLabel(mission)))],
+    [missions],
+  );
+
+  const sameLocation = allLocationLabels.length <= 1;
+
+  const activeTelemetryRaw = activeMission
+    ? telemetryMap[activeMission.mission_id] || []
     : [];
 
-  const activeStats = activeMissionId ? statsById[activeMissionId] : null;
+  const activeTelemetryFiltered = useMemo(() => {
+    const sliced = sliceByRange(activeTelemetryRaw, rangePreset);
+    return applyGpsFilter(sliced, gpsFilter);
+  }, [activeTelemetryRaw, rangePreset, gpsFilter]);
 
-  const activeTelemetrySliced = useMemo(
-    () => sliceByRange(activeTelemetryRaw, rangePreset),
-    [activeTelemetryRaw, rangePreset],
+  const activeTelemetrySmoothed = useMemo(() => {
+    return smoothMetric(activeTelemetryFiltered, metric, smoothing);
+  }, [activeTelemetryFiltered, metric, smoothing]);
+
+  const activeStats = activeMission
+    ? statsMap[activeMission.mission_id] || null
+    : null;
+
+  const singleMissionOverview = useMemo(
+    () => buildOverview(activeMission, activeTelemetryRaw, activeStats),
+    [activeMission, activeTelemetryRaw, activeStats],
   );
 
-  const activeTelemetryFiltered = useMemo(
-    () => applyGpsFilter(activeTelemetrySliced, gpsFilter),
-    [activeTelemetrySliced, gpsFilter],
-  );
-
-  const activeTelemetrySmoothed = useMemo(
-    () => smoothMetric(activeTelemetryFiltered, metric, smoothing),
-    [activeTelemetryFiltered, metric, smoothing],
-  );
-
-  const singleMissionSeries = useMemo(() => {
+  const singleTrendSeries = useMemo(() => {
     if (!activeMission) return [];
-
-    return [
-      {
-        id: activeMission.mission_id,
-        label: activeMission.mission_name || activeMission.mission_id,
-        color: SERIES_COLORS[0],
-        points: buildMetricSeries(activeTelemetrySmoothed, metric),
-      },
-    ];
+    const series = buildTrendSeriesForMission(
+      activeMission,
+      activeTelemetrySmoothed,
+      metric,
+      "#2563eb",
+      false,
+    );
+    return series ? [series] : [];
   }, [activeMission, activeTelemetrySmoothed, metric]);
 
   const multiMissionSeries = useMemo(() => {
     return missions
       .map((mission, index) => {
-        const rows = telemetryById[mission.mission_id] || [];
-        const sliced = sliceByRange(rows, rangePreset);
+        const raw = telemetryMap[mission.mission_id] || [];
+        const sliced = sliceByRange(raw, rangePreset);
         const filtered = applyGpsFilter(sliced, gpsFilter);
         const smoothed = smoothMetric(filtered, metric, smoothing);
-        const points = buildMetricSeries(smoothed, metric);
 
-        if (!points.length) return null;
-
-        return {
-          id: mission.mission_id,
-          label: mission.mission_name || mission.mission_id,
-          color: SERIES_COLORS[index % SERIES_COLORS.length],
-          points:
-            compareMode === "normalized"
-              ? points.map((point, pointIndex, all) => {
-                  const firstTs = all[0]?.x ?? 0;
-                  return {
-                    ...point,
-                    x: point.x - firstTs,
-                    originalX: point.x,
-                    normalizedIndex: pointIndex,
-                  };
-                })
-              : points,
-        };
+        return buildTrendSeriesForMission(
+          mission,
+          smoothed,
+          metric,
+          SERIES_COLORS[index % SERIES_COLORS.length],
+          compareMode === "normalized",
+        );
       })
       .filter(Boolean);
-  }, [
-    missions,
-    telemetryById,
-    rangePreset,
-    gpsFilter,
-    metric,
-    smoothing,
-    compareMode,
-  ]);
+  }, [missions, telemetryMap, rangePreset, gpsFilter, metric, smoothing, compareMode]);
 
   const trendSummary = useMemo(
-    () => computeTrendSummary(activeTelemetrySmoothed, metric),
-    [activeTelemetrySmoothed, metric],
+    () => computeTrendSummary(activeTelemetryFiltered, metric),
+    [activeTelemetryFiltered, metric],
   );
 
   const gpsQuality = useMemo(
     () => computeGpsQuality(activeTelemetryFiltered),
     [activeTelemetryFiltered],
   );
-
-  const activeMetricMeta = getMetricMeta(metric);
 
   const movementStats = useMemo(
     () => computeMovementStats(activeTelemetryFiltered),
@@ -501,28 +521,18 @@ export default function Analytics() {
     [activeTelemetryFiltered],
   );
 
-  const denseCellLookup = useMemo(
+  const densityLookup = useMemo(
     () => buildDenseCellLookup(densityCells),
     [densityCells],
   );
 
   const densityMapPoints = useMemo(
-    () => buildDensityMapPoints(densityCells),
-    [densityCells],
+    () => buildDensityMapPoints(activeTelemetryFiltered, densityLookup),
+    [activeTelemetryFiltered, densityLookup],
   );
 
   const distanceSeries = useMemo(
-    () => buildDistanceSeries(activeTelemetryFiltered, metric),
-    [activeTelemetryFiltered, metric],
-  );
-
-  const airAnomalies = useMemo(
-    () => computeAirAnomalies(activeTelemetryFiltered),
-    [activeTelemetryFiltered],
-  );
-
-  const baselineComparison = useMemo(
-    () => computeBaselineComparison(activeTelemetryFiltered),
+    () => buildDistanceSeries(activeTelemetryFiltered),
     [activeTelemetryFiltered],
   );
 
@@ -549,19 +559,22 @@ export default function Analytics() {
     ];
   }, [activeMission, activeTelemetryFiltered]);
 
-  const canShowSpecializedSection = sameProfile && Boolean(profileType);
-
-  const singleMissionOverview = useMemo(
-    () => buildMissionOverview(activeMission),
-    [activeMission],
+  const airAnomalies = useMemo(
+    () => computeAirAnomalies(activeTelemetryFiltered, metric),
+    [activeTelemetryFiltered, metric],
   );
+
+  const baselineComparison = useMemo(
+    () => computeBaselineComparison(activeTelemetryFiltered, metric),
+    [activeTelemetryFiltered, metric],
+  );
+
+  const canShowSpecializedSection = sameProfile && Boolean(profileType);
 
   const multiActiveProfileMeta = useMemo(() => {
     if (!sameProfile) return null;
     return getProfileMeta(profileType);
   }, [sameProfile, profileType]);
-
-  const pageTitle = isSingleMission ? "Mission Analytics" : "Mission Comparison";
 
   function handleRetry() {
     setReloadKey((prev) => prev + 1);
@@ -620,7 +633,7 @@ export default function Analytics() {
       {isSingleMission ? (
         <AnalyticsTrendsSingle
           mission={activeMission}
-          trendSeries={singleMissionSeries}
+          trendSeries={singleTrendSeries}
           trendSummary={trendSummary}
           metric={metric}
           onMetricChange={setMetric}
@@ -628,12 +641,9 @@ export default function Analytics() {
           onRangeChange={setRangePreset}
           gpsFilter={gpsFilter}
           onGpsFilterChange={setGpsFilter}
-          smoothing={smoothing}
-          onSmoothingChange={setSmoothing}
           metricOptions={METRIC_OPTIONS}
           rangeOptions={RANGE_OPTIONS}
           gpsFilterOptions={GPS_FILTER_OPTIONS}
-          smoothingOptions={SMOOTH_OPTIONS}
         />
       ) : (
         <AnalyticsTrendsMulti
@@ -651,16 +661,18 @@ export default function Analytics() {
           onGpsFilterChange={setGpsFilter}
           metricOptions={METRIC_OPTIONS}
           compareOptions={COMPARE_OPTIONS}
-          smoothingOptions={SMOOTH_OPTIONS}
           rangeOptions={RANGE_OPTIONS}
           gpsFilterOptions={GPS_FILTER_OPTIONS}
+          smoothingOptions={SMOOTH_OPTIONS}
         />
       )}
 
       <AnalyticsInsightsSection
         mission={activeMission}
         metric={metric}
-        metricMeta={activeMetricMeta}
+        metricMeta={
+          METRIC_OPTIONS.find((item) => item.value === metric) || METRIC_OPTIONS[0]
+        }
         stats={activeStats}
         trendSummary={trendSummary}
         gpsQuality={gpsQuality}
@@ -676,44 +688,19 @@ export default function Analytics() {
           profileMeta={activeProfileMeta}
           mission={activeMission}
           metric={metric}
-          metricMeta={activeMetricMeta}
+          metricMeta={
+            METRIC_OPTIONS.find((item) => item.value === metric) || METRIC_OPTIONS[0]
+          }
           telemetry={activeTelemetryFiltered}
           trendSummary={trendSummary}
           movementStats={movementStats}
-          densityCells={densityCells}
-          denseCellLookup={denseCellLookup}
           densityMapPoints={densityMapPoints}
-          computePointCellKey={computePointCellKey}
           distanceSeries={distanceSeries}
           altitudeSeries={altitudeSeries}
           staticStability={staticStability}
-          isValidGpsPoint={isValidGpsPoint}
-          isFiniteNumber={isFiniteNumber}
           formatNumber={formatNumber}
           AnalyticsSimpleLineChart={AnalyticsSimpleLineChart}
         />
-      ) : null}
-
-      {!canShowSpecializedSection && isMultiMission ? (
-        <section className="rounded-[2rem] border border-base-300 bg-base-100 shadow-sm">
-          <div className="p-5 sm:p-6">
-            <div className="flex items-start gap-3">
-              <div className="mt-0.5 rounded-xl border border-base-300 bg-base-200 p-2 text-base-content/60">
-                <FiCpu className="text-base" />
-              </div>
-
-              <div className="min-w-0">
-                <h2 className="text-base font-semibold text-base-content">
-                  Profile-specific analysis hidden
-                </h2>
-                <p className="mt-1 text-sm leading-6 text-base-content/60">
-                  Specialized sections are shown only when all selected missions
-                  share the same operating profile.
-                </p>
-              </div>
-            </div>
-          </div>
-        </section>
       ) : null}
     </div>
   );
