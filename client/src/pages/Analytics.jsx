@@ -1,22 +1,16 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import {
-  FiActivity,
-  FiAlertTriangle,
-  FiCpu,
-  FiMapPin,
-  FiRefreshCw,
-} from "react-icons/fi";
+import { FiAlertTriangle, FiCpu, FiMapPin, FiRefreshCw } from "react-icons/fi";
 import { TbDrone } from "react-icons/tb";
 import { MdDirectionsBike } from "react-icons/md";
 import { FaCarSide } from "react-icons/fa";
 
 import AnalyticsEmptyState from "../components/analytics/AnalyticsEmptyState";
-import AnalyticsHeaderSingle from "../components/analytics/AnalyticsHeaderSingle";
-import AnalyticsHeaderMulti from "../components/analytics/AnalyticsHeaderMulti";
+import AnalyticsHeaderSingle from "../components/analytics/headers/AnalyticsHeaderSingle";
+import AnalyticsHeaderMulti from "../components/analytics/headers/AnalyticsHeaderMulti";
 import AnalyticsCompatibilityAlerts from "../components/analytics/AnalyticsCompatibilityAlerts";
-import AnalyticsTrendsSingle from "../components/analytics/AnalyticsTrendsSingle";
-import AnalyticsTrendsMulti from "../components/analytics/AnalyticsTrendsMulti";
+import AnalyticsTrendsSingle from "../components/analytics/trends/AnalyticsTrendsSingle";
+import AnalyticsTrendsMulti from "../components/analytics/trends/AnalyticsTrendsMulti";
 import AnalyticsInsightsSection from "../components/analytics/AnalyticsInsightsSection";
 import AnalyticsProfileSection from "../components/analytics/AnalyticsProfileSection";
 import AnalyticsSimpleLineChart from "../components/analytics/AnalyticsSimpleLineChart";
@@ -41,7 +35,6 @@ import {
   isFiniteNumber,
   isValidGpsPoint,
   sliceByRange,
-  smoothMetric,
 } from "../utils/analyticsUtils";
 
 import {
@@ -68,17 +61,6 @@ const GPS_FILTER_OPTIONS = [
   { value: "all", label: "All points" },
   { value: "valid", label: "Valid GPS only" },
   { value: "good", label: "Good GPS only" },
-];
-
-const COMPARE_OPTIONS = [
-  { value: "single", label: "Single / overlay" },
-  { value: "normalized", label: "Normalized compare" },
-];
-
-const SMOOTH_OPTIONS = [
-  { value: "off", label: "Off" },
-  { value: "low", label: "Low" },
-  { value: "medium", label: "Medium" },
 ];
 
 const SERIES_COLORS = ["#2563eb", "#ec4899", "#10b981", "#f59e0b", "#8b5cf6"];
@@ -154,15 +136,12 @@ function normalizeTelemetry(rows = []) {
       lat: row?.lat != null ? Number(row.lat) : null,
       lon: row?.lon != null ? Number(row.lon) : null,
       alt_m: row?.alt_m != null ? Number(row.alt_m) : null,
-      fix_quality:
-        row?.fix_quality != null ? Number(row.fix_quality) : null,
-      satellites:
-        row?.satellites != null ? Number(row.satellites) : null,
+      fix_quality: row?.fix_quality != null ? Number(row.fix_quality) : null,
+      satellites: row?.satellites != null ? Number(row.satellites) : null,
       hdop: row?.hdop != null ? Number(row.hdop) : null,
       temp_c: row?.temp_c != null ? Number(row.temp_c) : null,
       hum_pct: row?.hum_pct != null ? Number(row.hum_pct) : null,
-      press_hpa:
-        row?.press_hpa != null ? Number(row.press_hpa) : null,
+      press_hpa: row?.press_hpa != null ? Number(row.press_hpa) : null,
       gas_ohms: row?.gas_ohms != null ? Number(row.gas_ohms) : null,
     }))
     .filter((row) => Number.isFinite(row.ts_epoch));
@@ -208,11 +187,28 @@ function buildOverview(mission, telemetry = [], stats = null) {
     ),
     locationText: buildLocationLabel(mission),
     telemetryCount:
-      Number(stats?.samples) || telemetry.length || mission.telemetry_count || 0,
+      Number(stats?.samples) ||
+      telemetry.length ||
+      mission.telemetry_count ||
+      0,
     gpsText: `${gpsGoodCount}/${gpsValidCount} good GPS samples`,
     hasImages: Boolean(mission.has_images),
     locationSourceText: mission.location_mode || "unknown",
   };
+}
+
+function haversineMeters(lat1, lon1, lat2, lon2) {
+  const toRad = (deg) => (deg * Math.PI) / 180;
+  const R = 6371000;
+
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+
+  return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
 function buildTrendSeriesForMission(
@@ -220,7 +216,7 @@ function buildTrendSeriesForMission(
   telemetry,
   metric,
   color = "#2563eb",
-  normalizeX = false,
+  xMode = "time", // time | progress | distance
 ) {
   if (!mission || !Array.isArray(telemetry) || telemetry.length === 0) {
     return null;
@@ -246,17 +242,73 @@ function buildTrendSeriesForMission(
     };
   });
 
-  if (normalizeX && points.length > 0) {
-    const startX = Number(points[0].x || 0);
+  if (xMode === "time") {
+    const startX = Number(points[0]?.x || 0);
     points = points.map((point) => ({
       ...point,
       x: Number(point.x || 0) - startX,
     }));
   }
 
+  if (xMode === "progress") {
+    const firstTs = Number(points[0]?.ts_epoch || 0);
+    const lastTs = Number(points[points.length - 1]?.ts_epoch || firstTs);
+    const span = lastTs - firstTs;
+
+    points = points.map((point, index) => {
+      let progress = 0;
+
+      if (span > 0 && Number.isFinite(Number(point.ts_epoch))) {
+        progress = (Number(point.ts_epoch) - firstTs) / span;
+      } else if (points.length > 1) {
+        progress = index / (points.length - 1);
+      }
+
+      return {
+        ...point,
+        x: progress * 100,
+      };
+    });
+  }
+
+  if (xMode === "distance") {
+    let cumulative = 0;
+
+    points = points.map((point, index) => {
+      if (index === 0) {
+        return { ...point, x: 0 };
+      }
+
+      const prev = points[index - 1];
+
+      const canMeasure =
+        Number.isFinite(Number(prev?.lat)) &&
+        Number.isFinite(Number(prev?.lon)) &&
+        Number.isFinite(Number(point?.lat)) &&
+        Number.isFinite(Number(point?.lon));
+
+      if (canMeasure) {
+        cumulative += haversineMeters(
+          Number(prev.lat),
+          Number(prev.lon),
+          Number(point.lat),
+          Number(point.lon),
+        );
+      }
+
+      return {
+        ...point,
+        x: cumulative,
+      };
+    });
+  }
+
   return {
     id: mission.mission_id,
     label: mission.mission_name || mission.mission_id,
+    shortLabel:
+      mission.mission_name ||
+      String(mission.mission_id || "Mission").slice(0, 18),
     color,
     points,
   };
@@ -282,9 +334,7 @@ function ErrorState({ errorText, onRetry }) {
           <div className="text-base font-semibold text-error">
             Analytics unavailable
           </div>
-          <div className="mt-1 text-sm text-base-content/70">
-            {errorText}
-          </div>
+          <div className="mt-1 text-sm text-base-content/70">{errorText}</div>
           <button
             type="button"
             className="btn btn-sm rounded-xl mt-4"
@@ -303,9 +353,7 @@ function EmptyState({
   title = "No analytics data available",
   description = "The selected missions could not be loaded or no compatible data is available yet.",
 }) {
-  return (
-    <AnalyticsEmptyState title={title} description={description} />
-  );
+  return <AnalyticsEmptyState title={title} description={description} />;
 }
 
 export default function Analytics() {
@@ -322,8 +370,6 @@ export default function Analytics() {
   const [metric, setMetric] = useState("temp_c");
   const [rangePreset, setRangePreset] = useState("full");
   const [gpsFilter, setGpsFilter] = useState("all");
-  const [compareMode, setCompareMode] = useState("single");
-  const [smoothing, setSmoothing] = useState("off");
 
   const [activeMissionId, setActiveMissionId] = useState("");
   const [singleHeaderExpanded, setSingleHeaderExpanded] = useState(true);
@@ -331,6 +377,8 @@ export default function Analytics() {
   const [loading, setLoading] = useState(true);
   const [errorText, setErrorText] = useState("");
   const [reloadKey, setReloadKey] = useState(0);
+
+  const [multiXAxisMode, setMultiXAxisMode] = useState("time");
 
   useEffect(() => {
     let cancelled = false;
@@ -435,7 +483,11 @@ export default function Analytics() {
   );
 
   const allProfileTypes = useMemo(
-    () => [...new Set(missions.map((mission) => mission.profile_type).filter(Boolean))],
+    () => [
+      ...new Set(
+        missions.map((mission) => mission.profile_type).filter(Boolean),
+      ),
+    ],
     [missions],
   );
 
@@ -457,10 +509,6 @@ export default function Analytics() {
     return applyGpsFilter(sliced, gpsFilter);
   }, [activeTelemetryRaw, rangePreset, gpsFilter]);
 
-  const activeTelemetrySmoothed = useMemo(() => {
-    return smoothMetric(activeTelemetryFiltered, metric, smoothing);
-  }, [activeTelemetryFiltered, metric, smoothing]);
-
   const activeStats = activeMission
     ? statsMap[activeMission.mission_id] || null
     : null;
@@ -472,15 +520,17 @@ export default function Analytics() {
 
   const singleTrendSeries = useMemo(() => {
     if (!activeMission) return [];
+
     const series = buildTrendSeriesForMission(
       activeMission,
-      activeTelemetrySmoothed,
+      activeTelemetryFiltered,
       metric,
       "#2563eb",
       false,
     );
+
     return series ? [series] : [];
-  }, [activeMission, activeTelemetrySmoothed, metric]);
+  }, [activeMission, activeTelemetryFiltered, metric]);
 
   const multiMissionSeries = useMemo(() => {
     return missions
@@ -488,18 +538,17 @@ export default function Analytics() {
         const raw = telemetryMap[mission.mission_id] || [];
         const sliced = sliceByRange(raw, rangePreset);
         const filtered = applyGpsFilter(sliced, gpsFilter);
-        const smoothed = smoothMetric(filtered, metric, smoothing);
 
         return buildTrendSeriesForMission(
           mission,
-          smoothed,
+          filtered,
           metric,
           SERIES_COLORS[index % SERIES_COLORS.length],
-          compareMode === "normalized",
+          multiXAxisMode,
         );
       })
       .filter(Boolean);
-  }, [missions, telemetryMap, rangePreset, gpsFilter, metric, smoothing, compareMode]);
+  }, [missions, telemetryMap, rangePreset, gpsFilter, metric, multiXAxisMode]);
 
   const trendSummary = useMemo(
     () => computeTrendSummary(activeTelemetryFiltered, metric),
@@ -608,16 +657,12 @@ export default function Analytics() {
           mission={activeMission}
           profileMeta={activeProfileMeta}
           expanded={singleHeaderExpanded}
-          onToggleExpanded={() =>
-            setSingleHeaderExpanded((prev) => !prev)
-          }
+          onToggleExpanded={() => setSingleHeaderExpanded((prev) => !prev)}
           overview={singleMissionOverview}
         />
       ) : (
         <AnalyticsHeaderMulti
           missions={missions}
-          activeMissionId={activeMissionId}
-          onChangeActiveMissionId={setActiveMissionId}
           sameProfile={sameProfile}
           sameLocation={sameLocation}
           profileMeta={multiActiveProfileMeta}
@@ -648,22 +693,16 @@ export default function Analytics() {
       ) : (
         <AnalyticsTrendsMulti
           missions={missions}
-          missionSeries={multiMissionSeries}
+          trendSeries={multiMissionSeries}
           metric={metric}
           onMetricChange={setMetric}
-          compareMode={compareMode}
-          onCompareModeChange={setCompareMode}
-          smoothing={smoothing}
-          onSmoothingChange={setSmoothing}
           range={rangePreset}
           onRangeChange={setRangePreset}
           gpsFilter={gpsFilter}
           onGpsFilterChange={setGpsFilter}
           metricOptions={METRIC_OPTIONS}
-          compareOptions={COMPARE_OPTIONS}
           rangeOptions={RANGE_OPTIONS}
           gpsFilterOptions={GPS_FILTER_OPTIONS}
-          smoothingOptions={SMOOTH_OPTIONS}
         />
       )}
 
@@ -671,7 +710,8 @@ export default function Analytics() {
         mission={activeMission}
         metric={metric}
         metricMeta={
-          METRIC_OPTIONS.find((item) => item.value === metric) || METRIC_OPTIONS[0]
+          METRIC_OPTIONS.find((item) => item.value === metric) ||
+          METRIC_OPTIONS[0]
         }
         stats={activeStats}
         trendSummary={trendSummary}
@@ -689,7 +729,8 @@ export default function Analytics() {
           mission={activeMission}
           metric={metric}
           metricMeta={
-            METRIC_OPTIONS.find((item) => item.value === metric) || METRIC_OPTIONS[0]
+            METRIC_OPTIONS.find((item) => item.value === metric) ||
+            METRIC_OPTIONS[0]
           }
           telemetry={activeTelemetryFiltered}
           trendSummary={trendSummary}

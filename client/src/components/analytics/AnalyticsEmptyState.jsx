@@ -13,7 +13,7 @@ import { TbDrone } from "react-icons/tb";
 import { MdDirectionsBike } from "react-icons/md";
 import { FaCarSide } from "react-icons/fa";
 
-import AnalyticsRechartsBarChart from "./AnalyticsRechartsBarChart";
+import AnalyticsRechartsBarChart from "./charts/AnalyticsRechartsBarChart";
 import { fetchDbSummary, fetchDbMissions } from "../../services/analyticsApi";
 
 function formatDuration(seconds) {
