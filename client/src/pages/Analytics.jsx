@@ -725,19 +725,25 @@ export default function Analytics() {
       {canShowSpecializedSection ? (
         <AnalyticsProfileSection
           profileType={profileType}
-          profileMeta={activeProfileMeta}
+          profileMeta={
+            isSingleMission ? activeProfileMeta : multiActiveProfileMeta
+          }
           mission={activeMission}
+          missions={missions}
           metric={metric}
           metricMeta={
             METRIC_OPTIONS.find((item) => item.value === metric) ||
             METRIC_OPTIONS[0]
           }
           telemetry={activeTelemetryFiltered}
+          telemetryMap={telemetryMap}
+          sameLocation={sameLocation}
+          rangePreset={rangePreset}
+          gpsFilter={gpsFilter}
           trendSummary={trendSummary}
           movementStats={movementStats}
           densityMapPoints={densityMapPoints}
           distanceSeries={distanceSeries}
-          altitudeSeries={altitudeSeries}
           staticStability={staticStability}
           formatNumber={formatNumber}
           AnalyticsSimpleLineChart={AnalyticsSimpleLineChart}

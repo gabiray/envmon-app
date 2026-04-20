@@ -8,6 +8,10 @@ import {
   FiWind,
 } from "react-icons/fi";
 
+import DroneProfileAnalytics from "./profiles/DroneProfileAnalytics";
+import CarProfileAnalytics from "./profiles/CarProfileAnalytics";
+// momentan poți lăsa celelalte secțiuni vechi până treci și la car/bicycle/static
+
 function StatCard({ label, value, hint = "", tone = "default" }) {
   const toneClass =
     tone === "warning"
@@ -114,103 +118,6 @@ function DenseZonesList({ densityMapPoints = [], formatNumber }) {
           </div>
         </div>
       ))}
-    </div>
-  );
-}
-
-function DroneSection({
-  mission,
-  telemetry = [],
-  altitudeSeries = [],
-  trendSummary = null,
-  formatNumber,
-  AnalyticsSimpleLineChart,
-}) {
-  const altitudeValues = telemetry
-    .map((point) => Number(point?.alt_m))
-    .filter((value) => Number.isFinite(value));
-
-  const maxAltitude =
-    altitudeValues.length > 0 ? Math.max(...altitudeValues) : null;
-  const minAltitude =
-    altitudeValues.length > 0 ? Math.min(...altitudeValues) : null;
-  const avgAltitude =
-    altitudeValues.length > 0
-      ? altitudeValues.reduce((sum, value) => sum + value, 0) /
-        altitudeValues.length
-      : null;
-
-  const altitudeSpread =
-    Number.isFinite(maxAltitude) && Number.isFinite(minAltitude)
-      ? maxAltitude - minAltitude
-      : null;
-
-  return (
-    <div className="space-y-5">
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard
-          label="Max altitude"
-          value={formatNumber(maxAltitude, 1, " m")}
-          hint="Highest recorded altitude in the selected range"
-        />
-        <StatCard
-          label="Avg altitude"
-          value={formatNumber(avgAltitude, 1, " m")}
-          hint="Average altitude during the mission"
-        />
-        <StatCard
-          label="Altitude spread"
-          value={formatNumber(altitudeSpread, 1, " m")}
-          hint="Difference between min and max altitude"
-        />
-        <StatCard
-          label="Metric trend"
-          value={trendSummary?.directionLabel || "—"}
-          hint="General direction of the selected metric"
-          tone={
-            trendSummary?.direction === "up"
-              ? "warning"
-              : trendSummary?.direction === "down"
-                ? "info"
-                : "success"
-          }
-        />
-      </div>
-
-      {AnalyticsSimpleLineChart && altitudeSeries?.length ? (
-        <SectionCard
-          title="Altitude profile"
-          description="Vertical evolution of the flight path across the selected mission range."
-          icon={FiTrendingUp}
-        >
-          <AnalyticsSimpleLineChart
-            title="Altitude profile"
-            xLabel="Time"
-            yLabel="Altitude"
-            unit="m"
-            series={altitudeSeries}
-            height={280}
-          />
-        </SectionCard>
-      ) : null}
-
-      <SectionCard
-        title="Flight interpretation"
-        description="Profile-specific context for aerial monitoring."
-        icon={FiNavigation}
-      >
-        <div className="grid grid-cols-1 gap-3 xl:grid-cols-3">
-          <MiniInfoRow
-            label="Mission type"
-            value={mission?.profile_label || "Drone"}
-          />
-          <MiniInfoRow label="Altitude relevance" value="High" />
-          <MiniInfoRow
-            label="Recommended focus"
-            value="Altitude changes and route coverage"
-          />
-        </div>
-      </SectionCard>
     </div>
   );
 }
@@ -393,17 +300,21 @@ export default function AnalyticsProfileSection({
   profileType = null,
   profileMeta = null,
   mission = null,
+  missions = [],
   telemetry = [],
+  telemetryMap = {},
+  sameLocation = true,
+  rangePreset = "full",
+  gpsFilter = "all",
   trendSummary = null,
   movementStats = null,
   densityMapPoints = [],
   distanceSeries = [],
-  altitudeSeries = [],
   staticStability = null,
   formatNumber,
   AnalyticsSimpleLineChart,
 }) {
-  if (!mission || !profileType || !profileMeta?.Icon) {
+  if (!profileType || !profileMeta?.Icon) {
     return null;
   }
 
@@ -423,24 +334,29 @@ export default function AnalyticsProfileSection({
       icon={profileMeta.Icon}
     >
       {profileType === "drone" ? (
-        <DroneSection
+        <DroneProfileAnalytics
           mission={mission}
+          missions={missions}
           telemetry={telemetry}
-          altitudeSeries={altitudeSeries}
+          telemetryMap={telemetryMap}
+          sameLocation={sameLocation}
+          rangePreset={rangePreset}
+          gpsFilter={gpsFilter}
           trendSummary={trendSummary}
           formatNumber={formatNumber}
-          AnalyticsSimpleLineChart={AnalyticsSimpleLineChart}
         />
       ) : null}
 
-      {profileType === "car" || profileType === "bicycle" ? (
-        <VehicleSection
+      {profileType === "car" ? (
+        <CarProfileAnalytics
           mission={mission}
-          movementStats={movementStats}
-          densityMapPoints={densityMapPoints}
-          distanceSeries={distanceSeries}
+          missions={missions}
+          telemetry={telemetry}
+          telemetryMap={telemetryMap}
+          sameLocation={sameLocation}
+          rangePreset={rangePreset}
+          gpsFilter={gpsFilter}
           formatNumber={formatNumber}
-          AnalyticsSimpleLineChart={AnalyticsSimpleLineChart}
         />
       ) : null}
 
