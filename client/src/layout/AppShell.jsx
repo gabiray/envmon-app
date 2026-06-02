@@ -47,7 +47,7 @@ export default function AppShell() {
   const [setupQueue, setSetupQueue] = useState([]);
   const [currentSetupDevice, setCurrentSetupDevice] = useState(null);
 
-  async function refresh() {
+  const refresh = useCallback(async () => {
     const data = await listDevices();
     const nextDevices = data.devices ?? [];
 
@@ -55,7 +55,7 @@ export default function AppShell() {
     setSelectedDeviceId(data.active_device_uuid || "none");
 
     return nextDevices;
-  }
+  }, []);
 
   async function loadProfiles() {
     try {
@@ -75,7 +75,7 @@ export default function AppShell() {
         setError(e?.response?.data?.error || e?.message || "Init failed");
       }
     })();
-  }, []);
+  }, [refresh]);
 
   useEffect(() => {
     if (!currentSetupDevice && setupQueue.length > 0) {
@@ -84,8 +84,6 @@ export default function AppShell() {
   }, [setupQueue, currentSetupDevice]);
 
   const devices = useMemo(() => {
-    console.log("devicesRaw", devicesRaw);
-
     const base = [
       {
         id: "none",
@@ -100,12 +98,9 @@ export default function AppShell() {
       id: d.device_uuid,
       label: d.nickname || d.hostname || d.info?.hostname || "Device",
       subtitle: d.active_profile_label || "Drone",
-      connected: Boolean(d.connected),
       connectionState: d.connection_state || "offline",
       lastSeenAgeS: d.last_seen_age_s ?? null,
     }));
-
-    console.log("mapped devices", mapped);
 
     return [...base, ...mapped];
   }, [devicesRaw]);
@@ -162,25 +157,15 @@ export default function AppShell() {
     }
   }
 
-  const handleDeviceConnected = useCallback((deviceId) => {
+  const handleDeviceConnected = useCallback(async (deviceId) => {
     if (!deviceId || deviceId === "none") return;
 
-    const nowEpoch = Math.floor(Date.now() / 1000);
-
-    setDevicesRaw((prev) =>
-      (prev || []).map((device) =>
-        device.device_uuid === deviceId
-          ? {
-              ...device,
-              connected: true,
-              connection_state: "online",
-              last_seen_epoch: nowEpoch,
-              last_seen_age_s: 0,
-            }
-          : device,
-      ),
-    );
-  }, []);
+    try {
+      await refresh();
+    } catch {
+      // Runtime polling should not surface duplicate errors beside page-level errors.
+    }
+  }, [refresh]);
 
   async function handleScan() {
     setIsScanning(true);

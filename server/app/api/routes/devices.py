@@ -1,6 +1,7 @@
 from flask import Blueprint, jsonify, request
 import time
 import requests
+from collections import Counter
 
 from app.services.discovery import scan_network, default_cidr
 from app.services.device_store import load_store, upsert_devices, set_active
@@ -44,28 +45,154 @@ def _enrich_devices(store_devices: list[dict], db_map: dict[str, dict]) -> list[
     return enriched
 
 
-ONLINE_TTL_S = 90
+def _normalize_base_url(base_url: str | None) -> str:
+    return str(base_url or "").strip().rstrip("/")
 
 
-def _add_connection_state(devices: list[dict]) -> list[dict]:
+def _get_info_for_base_url(base_url: str) -> dict:
+    if not base_url:
+        return {
+            "reachable": False,
+            "device_uuid": None,
+            "info": None,
+            "error": "missing_base_url",
+        }
+
+    try:
+        response = requests.get(f"{base_url}/info", timeout=(1.0, 3.0))
+        if response.status_code != 200:
+            return {
+                "reachable": False,
+                "device_uuid": None,
+                "info": None,
+                "error": f"status_{response.status_code}",
+            }
+
+        info = response.json() or {}
+        device_uuid = str(info.get("device_uuid") or "").strip()
+        if not device_uuid:
+            return {
+                "reachable": True,
+                "device_uuid": None,
+                "info": info,
+                "error": "missing_device_uuid",
+            }
+
+        return {
+            "reachable": True,
+            "device_uuid": device_uuid,
+            "info": info,
+            "error": None,
+        }
+    except Exception as e:
+        return {
+            "reachable": False,
+            "device_uuid": None,
+            "info": None,
+            "error": str(e),
+        }
+
+
+def _build_info_cache(devices: list[dict], known_info_by_base_url: dict[str, dict] | None = None) -> dict[str, dict]:
+    cache = dict(known_info_by_base_url or {})
+    base_urls = {
+        _normalize_base_url(d.get("base_url"))
+        for d in devices or []
+        if _normalize_base_url(d.get("base_url"))
+    }
+
+    for base_url in base_urls:
+        if base_url not in cache:
+            cache[base_url] = _get_info_for_base_url(base_url)
+
+    return cache
+
+
+def _log_connection_event(event: str, device: dict, details: dict | None = None) -> None:
+    payload = {
+        "event": event,
+        "device_uuid": device.get("device_uuid"),
+        "base_url": device.get("base_url"),
+    }
+    if details:
+        payload.update(details)
+    print("[devices:connection]", payload)
+
+
+def _add_connection_state(
+    devices: list[dict],
+    known_info_by_base_url: dict[str, dict] | None = None,
+) -> list[dict]:
     now = int(time.time())
+    info_by_base_url = _build_info_cache(devices, known_info_by_base_url)
+    base_url_counts = Counter(
+        _normalize_base_url(d.get("base_url"))
+        for d in devices or []
+        if _normalize_base_url(d.get("base_url"))
+    )
 
     result = []
     for d in devices or []:
         last_seen = d.get("last_seen_epoch")
-        seen_in_last_scan = bool(d.get("seen_in_last_scan"))
+        base_url = _normalize_base_url(d.get("base_url"))
+        actual = info_by_base_url.get(base_url) or {}
+        expected_uuid = str(d.get("device_uuid") or "").strip()
+        actual_uuid = str(actual.get("device_uuid") or "").strip()
 
         try:
             age_s = now - int(last_seen) if last_seen else None
         except Exception:
             age_s = None
 
-        connected = seen_in_last_scan or (age_s is not None and age_s <= ONLINE_TTL_S)
+        duplicate_base_url = bool(base_url and base_url_counts.get(base_url, 0) > 1)
+        if duplicate_base_url:
+            _log_connection_event(
+                "duplicate_base_url",
+                d,
+                {
+                    "duplicate_count": base_url_counts.get(base_url),
+                    "actual_device_uuid": actual_uuid or None,
+                },
+            )
+
+        if actual.get("reachable") and actual_uuid and actual_uuid == expected_uuid:
+            connected = True
+            connection_state = "online"
+            connection_reason = "info_uuid_match"
+            _log_connection_event("online", d, {"actual_device_uuid": actual_uuid})
+        elif actual.get("reachable") and actual_uuid and actual_uuid != expected_uuid:
+            connected = False
+            connection_state = "stale"
+            connection_reason = "uuid_mismatch"
+            _log_connection_event(
+                "uuid_mismatch",
+                d,
+                {
+                    "expected_device_uuid": expected_uuid,
+                    "actual_device_uuid": actual_uuid,
+                },
+            )
+        else:
+            connected = False
+            connection_state = "offline"
+            connection_reason = actual.get("error") or "info_unreachable"
+            _log_connection_event(
+                "offline",
+                d,
+                {
+                    "reason": connection_reason,
+                    "actual_device_uuid": actual_uuid or None,
+                },
+            )
 
         result.append({
             **d,
+            "base_url": base_url,
             "connected": connected,
-            "connection_state": "online" if connected else "offline",
+            "connection_state": connection_state,
+            "connection_reason": connection_reason,
+            "duplicate_base_url": duplicate_base_url,
+            "actual_device_uuid": actual_uuid or None,
             "last_seen_age_s": age_s,
         })
 
@@ -104,6 +231,10 @@ def list_devices():
                 "device_uuid": d.get("device_uuid"),
                 "connected": d.get("connected"),
                 "connection_state": d.get("connection_state"),
+                "connection_reason": d.get("connection_reason"),
+                "duplicate_base_url": d.get("duplicate_base_url"),
+                "actual_device_uuid": d.get("actual_device_uuid"),
+                "base_url": d.get("base_url"),
                 "last_seen_epoch": d.get("last_seen_epoch"),
                 "last_seen_age_s": d.get("last_seen_age_s"),
                 "seen_in_last_scan": d.get("seen_in_last_scan"),
@@ -152,7 +283,17 @@ def scan_devices():
 
     db_map = repo.get_map()
     enriched = _enrich_devices(store.get("devices", []), db_map)
-    enriched = _add_connection_state(enriched)
+    found_info_by_base_url = {
+        _normalize_base_url(d.get("base_url")): {
+            "reachable": True,
+            "device_uuid": str(d.get("device_uuid") or "").strip(),
+            "info": d.get("info"),
+            "error": None,
+        }
+        for d in found
+        if _normalize_base_url(d.get("base_url")) and d.get("device_uuid")
+    }
+    enriched = _add_connection_state(enriched, found_info_by_base_url)
 
     new_device_uuids = [
         d.get("device_uuid")
@@ -183,6 +324,10 @@ def scan_devices():
                 "device_uuid": d.get("device_uuid"),
                 "connected": d.get("connected"),
                 "connection_state": d.get("connection_state"),
+                "connection_reason": d.get("connection_reason"),
+                "duplicate_base_url": d.get("duplicate_base_url"),
+                "actual_device_uuid": d.get("actual_device_uuid"),
+                "base_url": d.get("base_url"),
                 "last_seen_epoch": d.get("last_seen_epoch"),
                 "last_seen_age_s": d.get("last_seen_age_s"),
                 "seen_in_last_scan": d.get("seen_in_last_scan"),
@@ -254,7 +399,15 @@ def add_device_manual():
 
         db_map = DevicesRepo().get_map()
         enriched = _enrich_devices(store.get("devices", []), db_map)
-        enriched = _add_connection_state(enriched)
+        known_info_by_base_url = {
+            _normalize_base_url(base_url): {
+                "reachable": True,
+                "device_uuid": device_uuid,
+                "info": info,
+                "error": None,
+            }
+        }
+        enriched = _add_connection_state(enriched, known_info_by_base_url)
 
         return jsonify({"ok": True, "devices": enriched})
     except Exception as e:

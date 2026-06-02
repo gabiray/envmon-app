@@ -67,13 +67,9 @@ function isPlaceholderDevice(device) {
 function isDeviceOnline(device) {
   if (isPlaceholderDevice(device)) return false;
 
-  return Boolean(
-    device.connected ||
-      device.online ||
-      device.isOnline ||
-      device.connectionState === "online" ||
-      device.connection_state === "online" ||
-      device.health?.ok === true,
+  return (
+    device.connectionState === "online" ||
+    device.connection_state === "online"
   );
 }
 
@@ -127,8 +123,6 @@ export default function Topbar({
 }) {
   const hasDevices = devices.length > 0;
   const navigate = useNavigate();
-
-  console.log("Topbar devices", devices);
 
   const selectedDevice = useMemo(() => {
     if (!hasDevices) return null;
