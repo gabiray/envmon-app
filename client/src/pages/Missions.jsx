@@ -7,6 +7,7 @@ import DeleteMissionModal from "../components/missions/DeleteMissionModal";
 import MissionsOverviewPanel from "../components/missions/MissionsOverviewPanel";
 import MissionsTablePanel from "../components/missions/MissionsTablePanel";
 import MissionDetailsModal from "../components/heatmap/MissionDetailsModal";
+import RenameMissionModal from "../components/missions/RenameMissionModal";
 
 import { useDeviceConnection } from "../hooks/useDeviceConnection";
 import {
@@ -187,6 +188,9 @@ function mapMissionToDetailsModal(mission, extra = null) {
 export default function Missions() {
   const navigate = useNavigate();
   const outlet = useOutletContext() || {};
+
+  const [renameModalOpen, setRenameModalOpen] = useState(false);
+  const [missionToRename, setMissionToRename] = useState(null);
 
   const {
     setPageTitle,
@@ -520,30 +524,34 @@ export default function Missions() {
     }
   }
 
-  async function handleRename(mission) {
+  function handleRenameRequest(mission) {
     if (!mission) return;
+    setMissionToRename(mission);
+    setRenameModalOpen(true);
+  }
 
-    const nextName = window.prompt(
-      "Rename mission",
-      mission.mission_name || "",
-    );
+  async function handleConfirmRename(nextName) {
+    if (!missionToRename) return;
+
     const trimmed = String(nextName || "").trim();
-
-    if (!trimmed || trimmed === mission.mission_name) return;
+    if (!trimmed || trimmed === missionToRename.mission_name) return;
 
     setTableBusy(true);
 
     try {
-      if (mission.source === "synced") {
+      if (missionToRename.source === "synced") {
         await Promise.allSettled([
-          renameDbMission(mission.mission_id, trimmed),
-          renameDeviceMission(mission.mission_id, trimmed),
+          renameDbMission(missionToRename.mission_id, trimmed),
+          renameDeviceMission(missionToRename.mission_id, trimmed),
         ]);
-      } else if (mission.source === "device") {
-        await renameDeviceMission(mission.mission_id, trimmed);
+      } else if (missionToRename.source === "device") {
+        await renameDeviceMission(missionToRename.mission_id, trimmed);
       } else {
-        await renameDbMission(mission.mission_id, trimmed);
+        await renameDbMission(missionToRename.mission_id, trimmed);
       }
+
+      setRenameModalOpen(false);
+      setMissionToRename(null);
 
       await loadPage();
     } finally {
@@ -753,7 +761,7 @@ export default function Missions() {
             onOpenAnalytics={(m) =>
               navigate(`/analytics?missionId=${m.mission_id}`)
             }
-            onRename={handleRename}
+            onRename={handleRenameRequest}
             onDelete={handleDeleteRequest}
             onImport={handleImportMission}
             onImportNew={handleImportNew}
@@ -774,6 +782,18 @@ export default function Missions() {
           setMissionToDelete(null);
         }}
         onConfirm={handleConfirmDelete}
+      />
+
+      <RenameMissionModal
+        open={renameModalOpen}
+        mission={missionToRename}
+        busy={tableBusy}
+        onClose={() => {
+          if (tableBusy) return;
+          setRenameModalOpen(false);
+          setMissionToRename(null);
+        }}
+        onConfirm={handleConfirmRename}
       />
 
       <MissionDetailsModal
