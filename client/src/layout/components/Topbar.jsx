@@ -55,6 +55,61 @@ function getDashboardRoute(profileType) {
   }
 }
 
+function isPlaceholderDevice(device) {
+  return (
+    !device ||
+    device.id === "none" ||
+    device.id === "" ||
+    device.isPlaceholder === true
+  );
+}
+
+function isDeviceOnline(device) {
+  if (isPlaceholderDevice(device)) return false;
+
+  return Boolean(
+    device.connected ||
+      device.online ||
+      device.isOnline ||
+      device.connectionState === "online" ||
+      device.connection_state === "online" ||
+      device.health?.ok === true,
+  );
+}
+
+function DeviceStatusDot({ device, showLabel = false }) {
+  if (isPlaceholderDevice(device)) return null;
+
+  const online = isDeviceOnline(device);
+  const label = online ? "Online" : "Offline";
+
+  return (
+    <span
+      className="tooltip tooltip-left shrink-0"
+      data-tip={label}
+      aria-label={label}
+      title={label}
+    >
+      <span className="relative flex h-3 w-3 items-center justify-center">
+        {online ? (
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-40" />
+        ) : null}
+
+        <span
+          className={[
+            "relative inline-flex h-2.5 w-2.5 rounded-full border border-base-100",
+            online ? "bg-success" : "bg-base-300",
+          ].join(" ")}
+        />
+      </span>
+
+      {showLabel ? (
+        <span className="ml-2 text-xs text-base-content/60">{label}</span>
+      ) : null}
+    </span>
+  );
+}
+
 export default function Topbar({
   pageTitle,
   devices = [],
@@ -72,6 +127,8 @@ export default function Topbar({
 }) {
   const hasDevices = devices.length > 0;
   const navigate = useNavigate();
+
+  console.log("Topbar devices", devices);
 
   const selectedDevice = useMemo(() => {
     if (!hasDevices) return null;
@@ -146,39 +203,73 @@ export default function Topbar({
               >
                 <span className="inline-flex items-center gap-2 min-w-0">
                   <FiCpu className="opacity-70 shrink-0" />
+
                   <span className="truncate">{selectedDeviceLabel}</span>
+
+                  <DeviceStatusDot device={selectedDevice} />
                 </span>
+
                 <FiChevronDown className="opacity-70 shrink-0" />
               </button>
 
               <ul
                 tabIndex={0}
-                className="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-64 border border-base-200"
+                className="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-72 border border-base-200"
               >
                 {!hasDevices ? (
                   <li>
                     <span className="opacity-70">No devices</span>
                   </li>
                 ) : (
-                  devices.map((d) => (
-                    <li key={d.id}>
-                      <button
-                        type="button"
-                        className={d.id === selectedDevice?.id ? "active" : ""}
-                        onClick={() => handleDeviceSelect(d.id)}
-                      >
-                        <FiCpu className="opacity-70 shrink-0" />
-                        <div className="min-w-0 text-left">
-                          <div className="truncate">{d.label}</div>
-                          {d.subtitle ? (
-                            <div className="text-[11px] opacity-60 truncate">
-                              {d.subtitle}
-                            </div>
+                  devices.map((d) => {
+                    const selected = d.id === selectedDevice?.id;
+                    const placeholder = isPlaceholderDevice(d);
+                    const online = isDeviceOnline(d);
+
+                    return (
+                      <li key={d.id}>
+                        <button
+                          type="button"
+                          className={[
+                            "flex w-full items-center justify-between gap-3 rounded-xl",
+                            selected ? "active" : "",
+                          ].join(" ")}
+                          onClick={() => handleDeviceSelect(d.id)}
+                        >
+                          <span className="flex min-w-0 items-center gap-3">
+                            <FiCpu className="opacity-70 shrink-0" />
+
+                            <span className="min-w-0 text-left">
+                              <span className="block truncate">{d.label}</span>
+
+                              {d.subtitle ? (
+                                <span className="block text-[11px] opacity-60 truncate">
+                                  {d.subtitle}
+                                </span>
+                              ) : null}
+                            </span>
+                          </span>
+
+                          {!placeholder ? (
+                            <span className="flex shrink-0 items-center gap-2">
+                              <span
+                                className={[
+                                  "hidden text-[11px] sm:inline",
+                                  online
+                                    ? "text-success"
+                                    : "text-base-content/35",
+                                ].join(" ")}
+                              >
+                                {online ? "Online" : "Offline"}
+                              </span>
+
+                              <DeviceStatusDot device={d} />
+                            </span>
                           ) : null}
-                        </div>
-                      </button>
-                    </li>
-                  ))
+                        </button>
+                      </li>
+                    );
+                  })
                 )}
               </ul>
             </div>
@@ -212,7 +303,9 @@ export default function Topbar({
                       <li key={p.type}>
                         <button
                           type="button"
-                          className={p.type === selectedProfileType ? "active" : ""}
+                          className={
+                            p.type === selectedProfileType ? "active" : ""
+                          }
                           onClick={() => handleProfileSelect(p.type)}
                         >
                           <Icon className="opacity-80 shrink-0" />
@@ -226,6 +319,7 @@ export default function Topbar({
             </div>
 
             <button
+              type="button"
               className="btn btn-sm btn-primary rounded-xl relative"
               onClick={onScan}
               disabled={isScanning}
@@ -233,6 +327,7 @@ export default function Topbar({
               title="Scan for devices"
             >
               <FiRefreshCw className={isScanning ? "animate-spin" : ""} />
+
               <span className="hidden sm:inline">
                 {isScanning ? "Scanning" : "Scan"}
               </span>

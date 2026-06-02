@@ -11,8 +11,28 @@ import {
 } from "react-icons/fi";
 import { FaCarSide } from "react-icons/fa";
 
+function formatStartPointDisplay(startPoint) {
+  if (!startPoint) {
+    return "Choose a saved location or create a new one from the map.";
+  }
+
+  const explicitName = String(startPoint?.name || "").trim();
+  if (explicitName) return explicitName;
+
+  const lat = startPoint?.latlng?.lat;
+  const lng = startPoint?.latlng?.lng;
+
+  if (Number.isFinite(lat) && Number.isFinite(lng)) {
+    return `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+  }
+
+  return "Unnamed location";
+}
+
 function getRuntimeMeta(runtimeState) {
-  const state = String(runtimeState || "").trim().toUpperCase();
+  const state = String(runtimeState || "")
+    .trim()
+    .toUpperCase();
 
   if (!state) {
     return {
@@ -116,13 +136,7 @@ function NumberField({
   );
 }
 
-function SelectField({
-  label,
-  value,
-  onChange,
-  options,
-  disabled = false,
-}) {
+function SelectField({ label, value, onChange, options, disabled = false }) {
   return (
     <label className="form-control w-full">
       <SectionLabel>{label}</SectionLabel>
@@ -249,7 +263,8 @@ export default function MissionPanelCarInline({
             </div>
           </div>
           <div className="mt-1 text-sm text-base-content/60">
-            Configure route-based environmental monitoring for the active vehicle.
+            Configure route-based environmental monitoring for the active
+            vehicle.
           </div>
         </div>
 
@@ -280,7 +295,7 @@ export default function MissionPanelCarInline({
                 maxLength={120}
                 value={missionName}
                 onChange={(e) => setMissionName(e.target.value)}
-                placeholder="e.g. City Center - Morning Route"
+                placeholder={buildDefaultMissionName(selectedStartPoint)}
                 disabled={busy}
               />
             </label>
@@ -352,11 +367,14 @@ export default function MissionPanelCarInline({
                         ? "Live vehicle position"
                         : selectedStartPoint?.name || "Fixed start point"}
                     </div>
+
                     <div className="mt-2 text-sm text-base-content/65">
                       {locationMode === "gps"
                         ? "The session starts from the current GPS position of the vehicle."
                         : selectedStartPoint
-                          ? `${selectedStartPoint.latlng.lat.toFixed(6)}, ${selectedStartPoint.latlng.lng.toFixed(6)}`
+                          ? selectedStartPoint.name?.trim()
+                            ? selectedStartPoint.name
+                            : `${selectedStartPoint.latlng.lat.toFixed(6)}, ${selectedStartPoint.latlng.lng.toFixed(6)}`
                           : "Choose a saved location or create a new one from the map."}
                     </div>
                   </div>
@@ -410,7 +428,8 @@ export default function MissionPanelCarInline({
           <div className="mt-5 rounded-[1.75rem] border border-base-300 bg-base-200/60 p-4">
             <div className="text-sm font-semibold">Active drive session</div>
             <div className="mt-1 text-xs text-base-content/60">
-              Session parameters are locked while telemetry recording is running.
+              Session parameters are locked while telemetry recording is
+              running.
             </div>
 
             <div className="mt-4 space-y-3">
@@ -422,7 +441,11 @@ export default function MissionPanelCarInline({
               />
               <InfoStackRow
                 label="Route origin"
-                value={formatLocationMode(activeLocationMode)}
+                value={
+                  activeLocationMode === "gps"
+                    ? "Live vehicle GPS"
+                    : formatStartPointDisplay(selectedStartPoint)
+                }
                 icon={FiMapPin}
               />
               <InfoStackRow

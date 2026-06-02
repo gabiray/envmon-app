@@ -50,13 +50,13 @@ function buildDefaultMissionName(startPoint) {
 export default function Dashboard() {
   const navigate = useNavigate();
 
-  const { selectedDeviceId, activeDevice } = useOutletContext();
+  const { selectedDeviceId, activeDevice, onDeviceConnected } = useOutletContext();
   const {
     uiStatus: deviceStatus,
     deviceState,
     missionRunning,
     refreshStatus,
-  } = useDeviceConnection(selectedDeviceId);
+  } = useDeviceConnection(selectedDeviceId, { onConnected: onDeviceConnected });
 
   const [startPoints, setStartPoints] = useState([]);
   const [selectedStartPointId, setSelectedStartPointId] = useState(null);

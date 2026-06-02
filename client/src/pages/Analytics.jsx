@@ -378,7 +378,8 @@ export default function Analytics() {
   const [errorText, setErrorText] = useState("");
   const [reloadKey, setReloadKey] = useState(0);
 
-  const [multiXAxisMode, setMultiXAxisMode] = useState("time");
+  // const [multiXAxisMode, setMultiXAxisMode] = useState("time");
+  const [multiXAxisMode, setMultiXAxisMode] = useState("raw");
 
   useEffect(() => {
     let cancelled = false;
@@ -692,6 +693,8 @@ export default function Analytics() {
         />
       ) : (
         <AnalyticsTrendsMulti
+          xAxisMode={multiXAxisMode}
+          onXAxisModeChange={setMultiXAxisMode}
           missions={missions}
           trendSeries={multiMissionSeries}
           metric={metric}

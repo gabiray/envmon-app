@@ -44,6 +44,34 @@ def _enrich_devices(store_devices: list[dict], db_map: dict[str, dict]) -> list[
     return enriched
 
 
+ONLINE_TTL_S = 90
+
+
+def _add_connection_state(devices: list[dict]) -> list[dict]:
+    now = int(time.time())
+
+    result = []
+    for d in devices or []:
+        last_seen = d.get("last_seen_epoch")
+        seen_in_last_scan = bool(d.get("seen_in_last_scan"))
+
+        try:
+            age_s = now - int(last_seen) if last_seen else None
+        except Exception:
+            age_s = None
+
+        connected = seen_in_last_scan or (age_s is not None and age_s <= ONLINE_TTL_S)
+
+        result.append({
+            **d,
+            "connected": connected,
+            "connection_state": "online" if connected else "offline",
+            "last_seen_age_s": age_s,
+        })
+
+    return result
+
+
 @devices_bp.get("/device-profiles")
 def list_device_profiles():
     return jsonify({
@@ -66,7 +94,24 @@ def list_devices():
     repo = DevicesRepo()
     db_map = repo.get_map()
 
-    store["devices"] = _enrich_devices(store.get("devices", []), db_map)
+    enriched = _enrich_devices(store.get("devices", []), db_map)
+    store["devices"] = _add_connection_state(enriched)
+
+    print("[devices:list]", {
+        "active_device_uuid": store.get("active_device_uuid"),
+        "devices": [
+            {
+                "device_uuid": d.get("device_uuid"),
+                "connected": d.get("connected"),
+                "connection_state": d.get("connection_state"),
+                "last_seen_epoch": d.get("last_seen_epoch"),
+                "last_seen_age_s": d.get("last_seen_age_s"),
+                "seen_in_last_scan": d.get("seen_in_last_scan"),
+            }
+            for d in store.get("devices", [])
+        ],
+    })
+    
     return jsonify(store)
 
 
@@ -107,6 +152,7 @@ def scan_devices():
 
     db_map = repo.get_map()
     enriched = _enrich_devices(store.get("devices", []), db_map)
+    enriched = _add_connection_state(enriched)
 
     new_device_uuids = [
         d.get("device_uuid")
@@ -119,7 +165,7 @@ def scan_devices():
         if d.get("device_uuid") in set(new_device_uuids)
     ]
 
-    return jsonify({
+    response = {
         "ok": True,
         "cidr_used": cidr or default_cidr(),
         "found_count": len(found),
@@ -127,7 +173,25 @@ def scan_devices():
         "active_device_uuid": store.get("active_device_uuid"),
         "new_device_uuids": new_device_uuids,
         "new_devices": new_devices,
+    }
+
+    print("[devices:scan]", {
+        "cidr_used": response["cidr_used"],
+        "found_count": response["found_count"],
+        "devices": [
+            {
+                "device_uuid": d.get("device_uuid"),
+                "connected": d.get("connected"),
+                "connection_state": d.get("connection_state"),
+                "last_seen_epoch": d.get("last_seen_epoch"),
+                "last_seen_age_s": d.get("last_seen_age_s"),
+                "seen_in_last_scan": d.get("seen_in_last_scan"),
+            }
+            for d in enriched
+        ],
     })
+
+    return jsonify(response)
 
 
 @devices_bp.post("/devices/select")
@@ -190,6 +254,7 @@ def add_device_manual():
 
         db_map = DevicesRepo().get_map()
         enriched = _enrich_devices(store.get("devices", []), db_map)
+        enriched = _add_connection_state(enriched)
 
         return jsonify({"ok": True, "devices": enriched})
     except Exception as e:

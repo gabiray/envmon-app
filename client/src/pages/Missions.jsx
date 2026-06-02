@@ -193,11 +193,14 @@ export default function Missions() {
     activeDevice = null,
     selectedDeviceId = "none",
     onDeviceChange = async () => {},
+    onDeviceConnected = null,
     profiles = [],
     devicesRaw = [],
   } = outlet;
 
-  const { uiStatus = "inactive" } = useDeviceConnection(selectedDeviceId);
+  const { uiStatus = "inactive" } = useDeviceConnection(selectedDeviceId, {
+    onConnected: onDeviceConnected,
+  });
 
   const deviceConnected = uiStatus === "connected";
 
@@ -743,7 +746,9 @@ export default function Missions() {
             }}
             onOpenDetails={handleOpenDetails}
             onOpenHeatmap={(m) =>
-              navigate(`/heatmap?missionId=${m.mission_id}`)
+              navigate(
+                `/heatmap?missionId=${encodeURIComponent(m.mission_id)}&deviceId=${encodeURIComponent(m.device_uuid || "")}`,
+              )
             }
             onOpenAnalytics={(m) =>
               navigate(`/analytics?missionId=${m.mission_id}`)
@@ -784,7 +789,9 @@ export default function Missions() {
         onOpenHeatmap={() => {
           if (!detailsMission?.missionId) return;
           setDetailsModalOpen(false);
-          navigate(`/heatmap?missionId=${detailsMission.missionId}`);
+          navigate(
+            `/heatmap?missionId=${encodeURIComponent(detailsMission.missionId)}&deviceId=${encodeURIComponent(detailsMission.deviceUuid || "")}`,
+          );
         }}
         onOpenAnalytics={() => {
           if (!detailsMission?.missionId) return;

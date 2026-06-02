@@ -90,7 +90,7 @@ export default function DeviceHeroBanner({
     <section className="relative overflow-hidden rounded-box border border-base-300 bg-neutral text-neutral-content">
       {/* Background image */}
       <div
-        className="absolute inset-0 bg-cover"
+        className="absolute inset-0 bg-cover transition-transform duration-700 hover:scale-105"
         style={{
           backgroundImage: `url(${droneLogo})`,
           backgroundPosition: "center 30%",
@@ -124,10 +124,15 @@ export default function DeviceHeroBanner({
         <div className="flex items-start justify-between gap-4">
           {/* LEFT */}
           <div className="min-w-0 max-w-3xl">
-            <div className="text-xs sm:text-sm opacity-75">Active device</div>
+            <div className="text-xs sm:text-sm opacity-75">Air profile</div>
 
             <div className="mt-1 truncate text-2xl font-semibold leading-tight sm:text-3xl">
               {nickname}
+            </div>
+
+            <div className="mt-2 max-w-2xl text-sm leading-6 opacity-80">
+              Optimized for aerial environmental monitoring and onboard image
+              capture.
             </div>
 
             <div className="mt-3 grid gap-1.5 text-sm opacity-85">

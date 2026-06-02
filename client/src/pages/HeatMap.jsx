@@ -26,6 +26,7 @@ export default function HeatMap() {
   const [searchParams, setSearchParams] = useSearchParams();
 
   const requestedMissionId = (searchParams.get("missionId") || "").trim();
+  const requestedDeviceId = (searchParams.get("deviceId") || "").trim();
 
   const [profileType, setProfileType] = useState(
     selectedProfileType || "drone",
@@ -98,13 +99,18 @@ export default function HeatMap() {
   });
 
   useEffect(() => {
+    if (!requestedMissionId) return;
+
     if (
-      !requestedMissionId ||
-      !Array.isArray(devicesRaw) ||
-      devicesRaw.length === 0
+      requestedDeviceId &&
+      requestedDeviceId !== "none" &&
+      requestedDeviceId !== selectedDeviceId
     ) {
+      onDeviceChange(requestedDeviceId);
       return;
     }
+
+    if (!Array.isArray(devicesRaw) || devicesRaw.length === 0) return;
 
     const missionOwner = devicesRaw.find((device) => {
       const ids = device?.missions || [];
@@ -117,7 +123,13 @@ export default function HeatMap() {
     ) {
       onDeviceChange(missionOwner.device_uuid);
     }
-  }, [requestedMissionId, devicesRaw, selectedDeviceId, onDeviceChange]);
+  }, [
+    requestedMissionId,
+    requestedDeviceId,
+    devicesRaw,
+    selectedDeviceId,
+    onDeviceChange,
+  ]);
 
   useEffect(() => {
     if (!requestedMissionId || loading) return;

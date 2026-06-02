@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import Sidebar from "./components/Sidebar";
 import Topbar from "./components/Topbar";
@@ -49,8 +49,12 @@ export default function AppShell() {
 
   async function refresh() {
     const data = await listDevices();
-    setDevicesRaw(data.devices ?? []);
-    return data.devices ?? [];
+    const nextDevices = data.devices ?? [];
+
+    setDevicesRaw(nextDevices);
+    setSelectedDeviceId(data.active_device_uuid || "none");
+
+    return nextDevices;
   }
 
   async function loadProfiles() {
@@ -66,7 +70,6 @@ export default function AppShell() {
     (async () => {
       try {
         await loadProfiles();
-        await selectDevice("none");
         await refresh();
       } catch (e) {
         setError(e?.response?.data?.error || e?.message || "Init failed");
@@ -81,15 +84,28 @@ export default function AppShell() {
   }, [setupQueue, currentSetupDevice]);
 
   const devices = useMemo(() => {
+    console.log("devicesRaw", devicesRaw);
+
     const base = [
-      { id: "none", label: "No Device", subtitle: "No active node selected" },
+      {
+        id: "none",
+        label: "No Device",
+        subtitle: "No active node selected",
+        connected: false,
+        isPlaceholder: true,
+      },
     ];
 
     const mapped = (devicesRaw || []).map((d) => ({
       id: d.device_uuid,
       label: d.nickname || d.hostname || d.info?.hostname || "Device",
       subtitle: d.active_profile_label || "Drone",
+      connected: Boolean(d.connected),
+      connectionState: d.connection_state || "offline",
+      lastSeenAgeS: d.last_seen_age_s ?? null,
     }));
+
+    console.log("mapped devices", mapped);
 
     return [...base, ...mapped];
   }, [devicesRaw]);
@@ -145,6 +161,26 @@ export default function AppShell() {
       return false;
     }
   }
+
+  const handleDeviceConnected = useCallback((deviceId) => {
+    if (!deviceId || deviceId === "none") return;
+
+    const nowEpoch = Math.floor(Date.now() / 1000);
+
+    setDevicesRaw((prev) =>
+      (prev || []).map((device) =>
+        device.device_uuid === deviceId
+          ? {
+              ...device,
+              connected: true,
+              connection_state: "online",
+              last_seen_epoch: nowEpoch,
+              last_seen_age_s: 0,
+            }
+          : device,
+      ),
+    );
+  }, []);
 
   async function handleScan() {
     setIsScanning(true);
@@ -240,6 +276,7 @@ export default function AppShell() {
                 selectedProfileType,
                 profiles,
                 devicesRaw,
+                onDeviceConnected: handleDeviceConnected,
                 onDeviceChange: handleDeviceChange,
                 onProfileChange: handleProfileChange,
               }}

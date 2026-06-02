@@ -33,6 +33,29 @@ function formatMinutesLabel(value) {
   return `${totalMinutes.toFixed(2)}m`;
 }
 
+function formatXAxisLabel(value, xAxisMode = "time") {
+  if (!isFiniteNumber(value)) return "—";
+
+  const num = Number(value);
+
+  if (xAxisMode === "progress") {
+    return `${num.toFixed(0)}%`;
+  }
+
+  if (xAxisMode === "distance") {
+    if (num < 1000) return `${Math.round(num)}m`;
+    return `${(num / 1000).toFixed(2)}km`;
+  }
+
+  return formatMinutesLabel(num);
+}
+
+function getXAxisTitle(xAxisMode = "time") {
+  if (xAxisMode === "progress") return "Mission progress";
+  if (xAxisMode === "distance") return "Route distance";
+  return "Elapsed mission time";
+}
+
 function formatEpochLabel(value) {
   if (!isFiniteNumber(value)) return "—";
 
@@ -74,7 +97,7 @@ function flattenSeriesToChartData(series = []) {
       if (!byX.has(x)) {
         byX.set(x, {
           x,
-          elapsed_min: x,
+          xValue: x,
           ts_epoch: point?.ts_epoch ?? null,
           lat: point?.lat ?? null,
           lon: point?.lon ?? null,
@@ -101,7 +124,13 @@ function flattenSeriesToChartData(series = []) {
   return [...byX.values()].sort((a, b) => a.x - b.x);
 }
 
-function CustomTooltip({ active, payload, unit = "", valueDecimals = 3 }) {
+function CustomTooltip({
+  active,
+  payload,
+  unit = "",
+  valueDecimals = 3,
+  xAxisMode = "time",
+}) {
   if (!active || !payload?.length) return null;
 
   const row = payload?.[0]?.payload || {};
@@ -122,7 +151,7 @@ function CustomTooltip({ active, payload, unit = "", valueDecimals = 3 }) {
         Position in mission
       </div>
       <div className="mt-1 text-sm font-semibold text-base-content">
-        {formatMinutesLabel(row.elapsed_min)}
+        {formatXAxisLabel(row.xValue, xAxisMode)}
       </div>
 
       <div className="mt-1 text-xs text-base-content/55">
@@ -243,6 +272,7 @@ export default function AnalyticsSingleMissionChart({
   yMinOverride = null,
   yMaxOverride = null,
   valueDecimals = 3,
+  xAxisMode = "time",
 }) {
   const chartData = useMemo(() => flattenSeriesToChartData(series), [series]);
   const curveType = getCurveType(smoothMode);
@@ -291,8 +321,8 @@ export default function AnalyticsSingleMissionChart({
           />
 
           <XAxis
-            dataKey="elapsed_min"
-            tickFormatter={formatMinutesLabel}
+            dataKey="xValue"
+            tickFormatter={(value) => formatXAxisLabel(value, xAxisMode)}
             minTickGap={28}
             tick={{ fontSize: 11, fill: "rgba(100,116,139,0.95)" }}
             axisLine={{ stroke: "rgba(148,163,184,0.45)" }}
@@ -301,7 +331,7 @@ export default function AnalyticsSingleMissionChart({
               brushEnabled
                 ? undefined
                 : {
-                    value: "Elapsed mission time",
+                    value: getXAxisTitle(xAxisMode),
                     position: "insideBottom",
                     offset: -8,
                     style: {
@@ -336,6 +366,7 @@ export default function AnalyticsSingleMissionChart({
               <CustomTooltip
                 unit={unit}
                 valueDecimals={valueDecimals}
+                xAxisMode={xAxisMode}
               />
             }
           />
@@ -391,11 +422,11 @@ export default function AnalyticsSingleMissionChart({
 
           {brushEnabled && chartData.length > 12 ? (
             <Brush
-              dataKey="elapsed_min"
+              dataKey="xValue"
               height={28}
               stroke="#2563eb"
               travellerWidth={10}
-              tickFormatter={formatMinutesLabel}
+              tickFormatter={(value) => formatXAxisLabel(value, xAxisMode)}
             />
           ) : null}
         </ComposedChart>

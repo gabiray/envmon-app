@@ -68,8 +68,18 @@ def save_store(store: dict) -> None:
 def upsert_devices(found: list[dict]) -> dict:
     store = load_store()
     by_uuid = {d.get("device_uuid"): d for d in store.get("devices", []) if d.get("device_uuid")}
+    found_uuids = {
+        d.get("device_uuid")
+        for d in found or []
+        if d.get("device_uuid")
+    }
 
-    for d in found:
+    for du, existing in by_uuid.items():
+        existing["seen_in_last_scan"] = du in found_uuids
+
+    now = int(time.time())
+
+    for d in found or []:
         du = d.get("device_uuid")
         if not du:
             continue
@@ -77,7 +87,8 @@ def upsert_devices(found: list[dict]) -> dict:
             "device_uuid": du,
             "name": d.get("name") or by_uuid.get(du, {}).get("name") or du[:8],
             "base_url": str(d.get("base_url") or "").rstrip("/"),
-            "last_seen_epoch": int(time.time()),
+            "last_seen_epoch": now,
+            "seen_in_last_scan": True,
             "info": d.get("info"),
         }
 
@@ -87,6 +98,23 @@ def upsert_devices(found: list[dict]) -> dict:
         reverse=True,
     )
     save_store(store)
+    return store
+
+
+def touch_device_seen(device_uuid: str) -> dict:
+    store = load_store()
+    now = int(time.time())
+
+    changed = False
+    for d in store.get("devices", []):
+        if d.get("device_uuid") == device_uuid:
+            d["last_seen_epoch"] = now
+            changed = True
+            break
+
+    if changed:
+        save_store(store)
+
     return store
 
 

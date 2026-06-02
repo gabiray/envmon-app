@@ -2,6 +2,7 @@ from flask import Blueprint, jsonify, Response, stream_with_context
 import requests
 
 from app.services.device_client import get, DeviceClient, DeviceNotSelected
+from app.services.device_store import load_store, touch_device_seen
 
 device_bp = Blueprint("device", __name__)
 
@@ -10,6 +11,10 @@ device_bp = Blueprint("device", __name__)
 def device_health():
     try:
         r = get("/health", timeout=12)
+        if 200 <= r.status_code < 300:
+            active_uuid = load_store().get("active_device_uuid")
+            if active_uuid:
+                touch_device_seen(active_uuid)
         return jsonify(r.json()), r.status_code
     except DeviceNotSelected as e:
         return jsonify({"ok": False, "error": str(e)}), 400
@@ -21,6 +26,10 @@ def device_health():
 def device_status():
     try:
         r = get("/status", timeout=4)
+        if 200 <= r.status_code < 300:
+            active_uuid = load_store().get("active_device_uuid")
+            if active_uuid:
+                touch_device_seen(active_uuid)
         return jsonify(r.json()), r.status_code
     except DeviceNotSelected as e:
         return jsonify({"ok": False, "error": str(e)}), 400

@@ -494,7 +494,7 @@ function ZoneCard({ zone, formatNumber, showMissionNames = false }) {
 
       <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
         <InfoRow
-          label="Mission progress"
+          label="Approx. route progress"
           value={
             Number.isFinite(progressPct)
               ? `${Math.round(progressPct)} %`
@@ -502,17 +502,14 @@ function ZoneCard({ zone, formatNumber, showMissionNames = false }) {
           }
         />
         <InfoRow
-          label="Appears near"
+          label="Approx. first appears"
           value={formatElapsedLabel(elapsedMin)}
         />
         <InfoRow
           label="Dwell"
           value={formatNumber(zone?.avgDwellS ?? zone?.dwellS, 0, " s")}
         />
-        <InfoRow
-          label="Samples"
-          value={formatNumber(zone?.count, 0)}
-        />
+        <InfoRow label="Samples" value={formatNumber(zone?.count, 0)} />
       </div>
 
       {Number.isFinite(nearestDistanceM) ? (
@@ -525,7 +522,9 @@ function ZoneCard({ zone, formatNumber, showMissionNames = false }) {
         </div>
       ) : null}
 
-      {showMissionNames && Array.isArray(zone?.missionNames) && zone.missionNames.length ? (
+      {showMissionNames &&
+      Array.isArray(zone?.missionNames) &&
+      zone.missionNames.length ? (
         <div className="mt-3 text-xs text-base-content/60">
           Seen in: {zone.missionNames.join(", ")}
         </div>
@@ -629,6 +628,8 @@ export default function CarProfileAnalytics({
   const [yMaxInput, setYMaxInput] = useState("");
 
   const [summaryOpen, setSummaryOpen] = useState(false);
+  const [denseZonesOpen, setDenseZonesOpen] = useState(false);
+  const [sharedZonesOpen, setSharedZonesOpen] = useState(false);
   const [expandedMap, setExpandedMap] = useState({});
 
   const singleMovementStats = useMemo(() => {
@@ -1017,49 +1018,75 @@ export default function CarProfileAnalytics({
               : "Because locations differ, dense zones should be interpreted separately for each mission."
           }
           icon={FiMapPin}
+          actions={
+            <button
+              type="button"
+              className="btn btn-sm btn-square rounded-xl border-base-300 bg-base-100 text-base-content hover:bg-base-200"
+              onClick={() => setSharedZonesOpen((prev) => !prev)}
+              aria-label="Toggle shared dense zones"
+              title="Toggle shared dense zones"
+            >
+              {sharedZonesOpen ? <FiChevronUp /> : <FiChevronDown />}
+            </button>
+          }
         >
-          {sameLocation ? (
-            sharedZones.length ? (
-              <div className="space-y-3">
-                {sharedZones.map((zone) => (
-                  <ZoneCard
-                    key={zone.key}
-                    zone={zone}
-                    formatNumber={formatNumber}
-                    showMissionNames={true}
-                  />
-                ))}
-              </div>
+          {sharedZonesOpen ? (
+            sameLocation ? (
+              sharedZones.length ? (
+                <div className="space-y-3">
+                  {sharedZones.map((zone) => (
+                    <ZoneCard
+                      key={zone.key}
+                      zone={zone}
+                      formatNumber={formatNumber}
+                      showMissionNames={true}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-2xl border border-dashed border-base-300 bg-base-100 px-4 py-10 text-center text-sm text-base-content/55">
+                  No shared congestion zones identified.
+                </div>
+              )
             ) : (
-              <div className="rounded-2xl border border-dashed border-base-300 bg-base-100 px-4 py-10 text-center text-sm text-base-content/55">
-                No shared congestion zones identified.
+              <div className="space-y-4">
+                {missionRows.map((item) => (
+                  <div
+                    key={`dense-${item.mission.mission_id}`}
+                    className="rounded-2xl border border-base-300 bg-base-100 px-4 py-4"
+                  >
+                    <div className="mb-3">
+                      <div className="text-sm font-semibold text-base-content">
+                        {item.mission.mission_name || item.mission.mission_id}
+                      </div>
+                      <div className="mt-1 text-xs text-base-content/55">
+                        {item.mission.mission_id || "—"}
+                      </div>
+                    </div>
+
+                    {item.denseZones?.length ? (
+                      <div className="space-y-2">
+                        {item.denseZones.slice(0, 4).map((zone) => (
+                          <ZoneCard
+                            key={`${item.mission.mission_id}-${zone.key}`}
+                            zone={zone}
+                            formatNumber={formatNumber}
+                          />
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="rounded-2xl border border-dashed border-base-300 bg-base-100 px-4 py-6 text-center text-sm text-base-content/55">
+                        No dense zones identified for this mission.
+                      </div>
+                    )}
+                  </div>
+                ))}
               </div>
             )
           ) : (
-            <div className="space-y-5">
-              {missionRows.map((item) => (
-                <div key={item.mission.mission_id} className="space-y-3">
-                  <div className="text-sm font-semibold text-base-content">
-                    {item.mission.mission_name || item.mission.mission_id}
-                  </div>
-
-                  {item.denseZones.length ? (
-                    item.denseZones
-                      .slice(0, 4)
-                      .map((zone) => (
-                        <ZoneCard
-                          key={`${item.mission.mission_id}-${zone.key}`}
-                          zone={zone}
-                          formatNumber={formatNumber}
-                        />
-                      ))
-                  ) : (
-                    <div className="rounded-2xl border border-dashed border-base-300 bg-base-100 px-4 py-6 text-center text-sm text-base-content/55">
-                      No dense zones identified for this mission.
-                    </div>
-                  )}
-                </div>
-              ))}
+            <div className="rounded-2xl border border-base-300 bg-base-100 px-4 py-4 text-sm text-base-content/60">
+              Open this section to inspect shared congestion areas or dense
+              zones per mission.
             </div>
           )}
         </SectionCard>
@@ -1204,20 +1231,38 @@ export default function CarProfileAnalytics({
         title="Dense traffic zones"
         description="Areas with repeated samples or prolonged low-speed presence."
         icon={FiMapPin}
+        actions={
+          <button
+            type="button"
+            className="btn btn-sm btn-square rounded-xl border-base-300 bg-base-100 text-base-content hover:bg-base-200"
+            onClick={() => setDenseZonesOpen((prev) => !prev)}
+            aria-label="Toggle dense traffic zones"
+            title="Toggle dense traffic zones"
+          >
+            {denseZonesOpen ? <FiChevronUp /> : <FiChevronDown />}
+          </button>
+        }
       >
-        {singleDenseZones.length ? (
-          <div className="space-y-3">
-            {singleDenseZones.slice(0, 6).map((zone) => (
-              <ZoneCard
-                key={zone.key}
-                zone={zone}
-                formatNumber={formatNumber}
-              />
-            ))}
-          </div>
+        {denseZonesOpen ? (
+          singleDenseZones.length ? (
+            <div className="space-y-3">
+              {singleDenseZones.slice(0, 6).map((zone) => (
+                <ZoneCard
+                  key={zone.key}
+                  zone={zone}
+                  formatNumber={formatNumber}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-dashed border-base-300 bg-base-100 px-4 py-10 text-center text-sm text-base-content/55">
+              No dense traffic zones identified for this mission.
+            </div>
+          )
         ) : (
-          <div className="rounded-2xl border border-dashed border-base-300 bg-base-100 px-4 py-10 text-center text-sm text-base-content/55">
-            No dense traffic zones identified for this mission.
+          <div className="rounded-2xl border border-base-300 bg-base-100 px-4 py-4 text-sm text-base-content/60">
+            Open this section to inspect approximate dense traffic areas
+            detected along the route.
           </div>
         )}
       </SectionCard>

@@ -294,13 +294,13 @@ function DriveInsights({
 export default function DashboardCar() {
   const navigate = useNavigate();
 
-  const { selectedDeviceId, activeDevice } = useOutletContext();
+  const { selectedDeviceId, activeDevice, onDeviceConnected } = useOutletContext();
   const {
     uiStatus: deviceStatus,
     deviceState,
     missionRunning,
     refreshStatus,
-  } = useDeviceConnection(selectedDeviceId);
+  } = useDeviceConnection(selectedDeviceId, { onConnected: onDeviceConnected });
 
   const [startPoints, setStartPoints] = useState([]);
   const [selectedStartPointId, setSelectedStartPointId] = useState(null);
@@ -637,13 +637,30 @@ export default function DashboardCar() {
         }
 
         try {
-          const matched = await matchStartPointByCoords({
+          const existing = await matchStartPointByCoords({
             device_uuid: selectedDeviceId,
             lat: gpsFix.lat,
             lon: gpsFix.lon,
+            radius_m: 35,
           });
 
-          if (!matched) {
+          if (existing?.matched && existing?.item?.id) {
+            setSelectedStartPointId(existing.item.id);
+
+            await startMission({
+              ...basePayload,
+              location_mode: "gps",
+            });
+
+            await refreshStatus();
+            return { ok: true };
+          }
+          
+          const gpsLocationName = String(
+            formPayload?.gps_location_name || "",
+          ).trim();
+
+          if (!gpsLocationName) {
             return {
               ok: false,
               needsGpsLocationName: true,
@@ -655,17 +672,38 @@ export default function DashboardCar() {
               payload: basePayload,
             };
           }
+
+          const created = await createStartPoint({
+            device_uuid: selectedDeviceId,
+            name: gpsLocationName,
+            latlng: {
+              lat: Number(gpsFix.lat),
+              lng: Number(gpsFix.lon),
+            },
+            alt_m: gpsFix.alt_m ?? null,
+            source: "gps",
+            tags: ["gps", "car"],
+          });
+
+          if (created?.id) {
+            setStartPoints((prev) => [created, ...prev]);
+            setSelectedStartPointId(created.id);
+          }
+
+          await startMission({
+            ...basePayload,
+            location_mode: "gps",
+          });
+
+          await refreshStatus();
+          return { ok: true };
         } catch (error) {
-          console.error("Failed to match start point by coords", error);
+          console.error("Failed to resolve GPS start point", error);
+          return {
+            ok: false,
+            error: "Failed to save GPS location before starting the session.",
+          };
         }
-
-        await startMission({
-          ...basePayload,
-          location_mode: "gps",
-        });
-
-        await refreshStatus();
-        return { ok: true };
       }
 
       return { ok: false, error: "Unsupported location mode." };

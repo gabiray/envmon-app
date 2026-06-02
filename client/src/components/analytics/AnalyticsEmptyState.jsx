@@ -123,7 +123,9 @@ function buildBuckets(missions = [], range = "month", selectedYear = null) {
   if (range === "week") {
     start = startOfDay(now);
     start.setDate(start.getDate() - 6);
-    end = startOfDay(now);
+
+    end = new Date(now);
+    end.setHours(23, 59, 59, 999);
 
     shortFormatter = formatDayShort;
     longFormatter = formatDayLong;

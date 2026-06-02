@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import api from "../services/api";
 
-export function useDeviceConnection(selectedDeviceId) {
+export function useDeviceConnection(selectedDeviceId, options = {}) {
+  const { onConnected = null } = options;
+
   const [uiStatus, setUiStatus] = useState("inactive"); // inactive | connected | out_of_range
   const [deviceState, setDeviceState] = useState(null);
   const [missionRunning, setMissionRunning] = useState(false);
@@ -24,18 +26,23 @@ export function useDeviceConnection(selectedDeviceId) {
 
       setMissionRunning(runningNow);
       setUiStatus("connected");
+      onConnected?.(selectedDeviceId);
 
       return data;
     } catch {
       setDeviceState((prev) => prev);
       setMissionRunning((prev) => prev);
-      setUiStatus((prevRunning) => (missionRunning ? "out_of_range" : "inactive"));
+      setUiStatus(missionRunning ? "out_of_range" : "inactive");
       return null;
     }
-  }, [selectedDeviceId, missionRunning]);
+  }, [selectedDeviceId, missionRunning, onConnected]);
 
   useEffect(() => {
-    refreshStatus();
+    const timeout = window.setTimeout(() => {
+      refreshStatus();
+    }, 0);
+
+    return () => window.clearTimeout(timeout);
   }, [refreshStatus]);
 
   useEffect(() => {
