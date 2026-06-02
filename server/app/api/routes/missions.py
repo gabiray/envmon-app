@@ -4,7 +4,12 @@ import requests
 from app.services.device_store import load_store
 from app.repositories.devices_repo import DevicesRepo
 
-from ...services.device_client import DeviceClient, DeviceNotSelected
+from ...services.device_client import (
+    DeviceClient,
+    DeviceIdentityMismatch,
+    DeviceNotSelected,
+    DeviceUnreachable,
+)
 
 missions_bp = Blueprint("missions", __name__)
 
@@ -15,8 +20,12 @@ def list_missions():
         dc = DeviceClient()
         r = dc.get("/missions", timeout=5)
         return jsonify(r.json()), r.status_code
+    except DeviceIdentityMismatch as e:
+        return jsonify(e.to_dict()), 409
     except DeviceNotSelected as e:
         return jsonify({"ok": False, "error": str(e)}), 400
+    except DeviceUnreachable as e:
+        return jsonify({"ok": False, "error": str(e), "connection_state": "offline"}), 502
     except Exception as e:
         return jsonify({"ok": False, "error": f"Device unreachable: {e}"}), 502
 
@@ -51,8 +60,12 @@ def start_mission():
         dc = DeviceClient()
         r = dc.post("/missions/start", payload, timeout=10)
         return jsonify(r.json()), r.status_code
+    except DeviceIdentityMismatch as e:
+        return jsonify(e.to_dict()), 409
     except DeviceNotSelected as e:
         return jsonify({"ok": False, "error": str(e)}), 400
+    except DeviceUnreachable as e:
+        return jsonify({"ok": False, "error": str(e), "connection_state": "offline"}), 502
     except Exception as e:
         return jsonify({"ok": False, "error": f"Device unreachable: {e}"}), 502
 
@@ -63,8 +76,12 @@ def stop_mission():
         dc = DeviceClient()
         r = dc.post("/missions/stop", {}, timeout=5)
         return jsonify(r.json()), r.status_code
+    except DeviceIdentityMismatch as e:
+        return jsonify(e.to_dict()), 409
     except DeviceNotSelected as e:
         return jsonify({"ok": False, "error": str(e)}), 400
+    except DeviceUnreachable as e:
+        return jsonify({"ok": False, "error": str(e), "connection_state": "offline"}), 502
     except Exception as e:
         return jsonify({"ok": False, "error": f"Device unreachable: {e}"}), 502
 
@@ -75,8 +92,12 @@ def abort_mission():
         dc = DeviceClient()
         r = dc.post("/missions/abort", {}, timeout=5)
         return jsonify(r.json()), r.status_code
+    except DeviceIdentityMismatch as e:
+        return jsonify(e.to_dict()), 409
     except DeviceNotSelected as e:
         return jsonify({"ok": False, "error": str(e)}), 400
+    except DeviceUnreachable as e:
+        return jsonify({"ok": False, "error": str(e), "connection_state": "offline"}), 502
     except Exception as e:
         return jsonify({"ok": False, "error": f"Device unreachable: {e}"}), 502
 
@@ -105,8 +126,12 @@ def export_mission(mission_id: str):
         }
         return Response(gen(), headers=headers, status=200)
 
+    except DeviceIdentityMismatch as e:
+        return jsonify(e.to_dict()), 409
     except DeviceNotSelected as e:
         return jsonify({"ok": False, "error": str(e)}), 400
+    except DeviceUnreachable as e:
+        return jsonify({"ok": False, "error": str(e), "connection_state": "offline"}), 502
     except Exception as e:
         return jsonify({"ok": False, "error": f"Device unreachable: {e}"}), 502
     
@@ -123,8 +148,12 @@ def rename_device_mission(mission_id: str):
         dc = DeviceClient()
         r = dc.patch(f"/missions/{mission_id}", {"mission_name": mission_name}, timeout=8)
         return jsonify(r.json()), r.status_code
+    except DeviceIdentityMismatch as e:
+        return jsonify(e.to_dict()), 409
     except DeviceNotSelected as e:
         return jsonify({"ok": False, "error": str(e)}), 400
+    except DeviceUnreachable as e:
+        return jsonify({"ok": False, "error": str(e), "connection_state": "offline"}), 502
     except Exception as e:
         return jsonify({"ok": False, "error": f"Device unreachable: {e}"}), 502
 
@@ -135,8 +164,12 @@ def delete_device_mission(mission_id: str):
         dc = DeviceClient()
         r = dc.delete(f"/missions/{mission_id}", timeout=10)
         return jsonify(r.json()), r.status_code
+    except DeviceIdentityMismatch as e:
+        return jsonify(e.to_dict()), 409
     except DeviceNotSelected as e:
         return jsonify({"ok": False, "error": str(e)}), 400
+    except DeviceUnreachable as e:
+        return jsonify({"ok": False, "error": str(e), "connection_state": "offline"}), 502
     except Exception as e:
         return jsonify({"ok": False, "error": f"Device unreachable: {e}"}), 502
     

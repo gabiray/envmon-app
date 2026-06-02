@@ -1,5 +1,6 @@
 from flask import Blueprint, jsonify
 import requests
+from collections import Counter
 
 from app.services.device_store import load_store
 from app.repositories.devices_repo import DevicesRepo
@@ -13,11 +14,23 @@ def _safe_json_get(url: str, timeout=(1.0, 2.0)):
     return r.json() or {}
 
 
+def _log_mission_control_event(event: str, details: dict | None = None) -> None:
+    payload = {"event": event}
+    if details:
+        payload.update(details)
+    print("[mission_control]", payload)
+
+
 @mission_control_bp.get("/mission-control/active")
 def mission_control_active():
     store = load_store()
     repo = DevicesRepo()
     db_map = repo.get_map()
+    base_url_counts = Counter(
+        str(d.get("base_url") or "").rstrip("/")
+        for d in store.get("devices", [])
+        if str(d.get("base_url") or "").rstrip("/")
+    )
 
     items = []
 
@@ -28,6 +41,16 @@ def mission_control_active():
         if not device_uuid or not base_url:
             continue
 
+        if base_url_counts.get(base_url, 0) > 1:
+            _log_mission_control_event(
+                "duplicate_base_url",
+                {
+                    "device_uuid": device_uuid,
+                    "base_url": base_url,
+                    "duplicate_count": base_url_counts.get(base_url),
+                },
+            )
+
         db_rec = db_map.get(device_uuid) or {}
 
         nickname = db_rec.get("nickname")
@@ -36,8 +59,49 @@ def mission_control_active():
 
         try:
             info = _safe_json_get(base_url + "/info", timeout=(1.0, 2.0))
+        except Exception as e:
+            _log_mission_control_event(
+                "device_unreachable",
+                {
+                    "device_uuid": device_uuid,
+                    "base_url": base_url,
+                    "error": str(e),
+                },
+            )
+            continue
+
+        actual_uuid = str(info.get("device_uuid") or "").strip()
+        if actual_uuid != str(device_uuid or "").strip():
+            _log_mission_control_event(
+                "uuid_mismatch",
+                {
+                    "expected_uuid": device_uuid,
+                    "actual_uuid": actual_uuid or None,
+                    "base_url": base_url,
+                },
+            )
+            continue
+
+        _log_mission_control_event(
+            "online_uuid_match",
+            {
+                "device_uuid": device_uuid,
+                "base_url": base_url,
+            },
+        )
+
+        try:
             status = _safe_json_get(base_url + "/status", timeout=(1.0, 2.0))
-        except Exception:
+        except Exception as e:
+            _log_mission_control_event(
+                "device_unreachable",
+                {
+                    "device_uuid": device_uuid,
+                    "base_url": base_url,
+                    "endpoint": "/status",
+                    "error": str(e),
+                },
+            )
             continue
 
         state = status.get("state")

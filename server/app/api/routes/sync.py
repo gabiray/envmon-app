@@ -1,6 +1,6 @@
 from flask import Blueprint, jsonify, request
 from app.services.sync_service import SyncService
-from app.services.device_client import DeviceNotSelected
+from app.services.device_client import DeviceIdentityMismatch, DeviceNotSelected, DeviceUnreachable
 
 sync_bp = Blueprint("sync", __name__)
 
@@ -11,8 +11,12 @@ def sync_active_import_new():
         svc = SyncService()
         result = svc.sync_all_new()
         return jsonify(result)
+    except DeviceIdentityMismatch as e:
+        return jsonify(e.to_dict()), 409
     except DeviceNotSelected as e:
         return jsonify({"ok": False, "error": str(e)}), 400
+    except DeviceUnreachable as e:
+        return jsonify({"ok": False, "error": str(e), "connection_state": "offline"}), 502
     except Exception as e:
         return jsonify({"ok": False, "error": f"Sync failed: {e}"}), 500
 
@@ -33,8 +37,12 @@ def sync_active_import_selected():
         svc = SyncService()
         result = svc.sync_selected(mission_ids, overwrite=overwrite)
         return jsonify(result)
+    except DeviceIdentityMismatch as e:
+        return jsonify(e.to_dict()), 409
     except DeviceNotSelected as e:
         return jsonify({"ok": False, "error": str(e)}), 400
+    except DeviceUnreachable as e:
+        return jsonify({"ok": False, "error": str(e), "connection_state": "offline"}), 502
     except Exception as e:
         return jsonify({"ok": False, "error": f"Sync failed: {e}"}), 500
     

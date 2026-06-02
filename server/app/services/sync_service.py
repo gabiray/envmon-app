@@ -34,20 +34,12 @@ class SyncService:
     def _read_active_device_info(self) -> tuple[str, str | None, str]:
         dc = DeviceClient()
         base_url = dc.base_url
-
-        info = {}
-        try:
-            ri = requests.get(base_url + "/info", timeout=(1, 3))
-            if ri.status_code == 200:
-                info = ri.json() or {}
-        except Exception:
-            info = {}
-
-        device_uuid = str(info.get("device_uuid") or "").strip()
+        info = dc.info or {}
+        device_uuid = str(dc.active_device_uuid or "").strip()
         hostname = info.get("hostname")
 
         if not device_uuid:
-            raise RuntimeError("Active device did not return device_uuid from /info")
+            raise RuntimeError("No active device_uuid available for sync")
 
         return device_uuid, hostname, base_url
 
@@ -119,7 +111,7 @@ class SyncService:
     def sync_all_new(self) -> dict:
         device_uuid, hostname, base_url = self._read_active_device_info()
 
-        dc = DeviceClient(base_url=base_url)
+        dc = DeviceClient(base_url=base_url, expected_uuid=device_uuid)
         missions_resp = dc.get("/missions", timeout=8).json()
         mission_ids = missions_resp.get("missions") or []
 

@@ -44,6 +44,18 @@ function getStatusMeta(status) {
     };
   }
 
+  if (status === "stale") {
+    return {
+      label: "UUID mismatch",
+      hint: "Selected vehicle does not match this IP",
+      Icon: FiAlertTriangle,
+      statusClass: "status status-warning",
+      badge:
+        "badge badge-outline border-warning/30 text-warning bg-base-100/10 backdrop-blur-sm",
+      pulsing: false,
+    };
+  }
+
   return {
     label: "Inactive",
     hint: "Select a vehicle to begin monitoring",

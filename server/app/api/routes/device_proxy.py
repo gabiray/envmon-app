@@ -1,7 +1,13 @@
 from flask import Blueprint, jsonify, Response, stream_with_context
 import requests
 
-from app.services.device_client import get, DeviceClient, DeviceNotSelected
+from app.services.device_client import (
+    get,
+    DeviceClient,
+    DeviceIdentityMismatch,
+    DeviceNotSelected,
+    DeviceUnreachable,
+)
 from app.services.device_store import load_store, touch_device_seen
 
 device_bp = Blueprint("device", __name__)
@@ -16,8 +22,17 @@ def device_health():
             if active_uuid:
                 touch_device_seen(active_uuid)
         return jsonify(r.json()), r.status_code
+    except DeviceIdentityMismatch as e:
+        return jsonify(e.to_dict()), 409
     except DeviceNotSelected as e:
         return jsonify({"ok": False, "error": str(e)}), 400
+    except DeviceUnreachable as e:
+        return jsonify({
+            "ok": False,
+            "error": str(e),
+            "connection_state": "offline",
+            "base_url": e.base_url,
+        }), 502
     except Exception as e:
         return jsonify({"ok": False, "error": f"Device unreachable: {e}"}), 502
 
@@ -31,8 +46,17 @@ def device_status():
             if active_uuid:
                 touch_device_seen(active_uuid)
         return jsonify(r.json()), r.status_code
+    except DeviceIdentityMismatch as e:
+        return jsonify(e.to_dict()), 409
     except DeviceNotSelected as e:
         return jsonify({"ok": False, "error": str(e)}), 400
+    except DeviceUnreachable as e:
+        return jsonify({
+            "ok": False,
+            "error": str(e),
+            "connection_state": "offline",
+            "base_url": e.base_url,
+        }), 502
     except Exception as e:
         return jsonify({"ok": False, "error": f"Device unreachable: {e}"}), 502
 
@@ -82,8 +106,17 @@ def device_stream():
             headers=headers,
         )
 
+    except DeviceIdentityMismatch as e:
+        return jsonify(e.to_dict()), 409
     except DeviceNotSelected as e:
         return jsonify({"ok": False, "error": str(e)}), 400
+    except DeviceUnreachable as e:
+        return jsonify({
+            "ok": False,
+            "error": str(e),
+            "connection_state": "offline",
+            "base_url": e.base_url,
+        }), 502
     except Exception as e:
         return jsonify({"ok": False, "error": f"Device unreachable: {e}"}), 502
     

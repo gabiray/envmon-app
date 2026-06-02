@@ -43,6 +43,19 @@ function getStatusMeta(status) {
     };
   }
 
+  if (status === "stale") {
+    return {
+      label: "UUID mismatch",
+      hint: "Selected device does not match this IP",
+      tone: "warning",
+      Icon: FiAlertTriangle,
+      statusClass: "status status-warning",
+      badge:
+        "badge badge-outline border-warning/30 text-warning bg-base-100/10 backdrop-blur-sm",
+      pulsing: false,
+    };
+  }
+
   return {
     label: "Inactive",
     hint: "Select a device to enable missions",

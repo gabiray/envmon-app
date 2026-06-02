@@ -82,7 +82,13 @@ export default function DeviceStatusPanel({
   const [expanded, setExpanded] = useState(defaultExpanded);
 
   useEffect(() => {
-    if (expandSignal > 0) setExpanded(true);
+    if (expandSignal <= 0) return undefined;
+
+    const timeout = window.setTimeout(() => {
+      setExpanded(true);
+    }, 0);
+
+    return () => window.clearTimeout(timeout);
   }, [expandSignal]);
 
   const profile = useMemo(
@@ -169,9 +175,25 @@ export default function DeviceStatusPanel({
                       ? "Connected"
                       : deviceStatus === "out_of_range"
                         ? "Out of range"
-                        : "Inactive"
+                        : deviceStatus === "stale"
+                          ? "UUID mismatch"
+                          : "Inactive"
                   }
                 />
+                {deviceStatus === "stale" ? (
+                  <>
+                    <InfoRow
+                      label="Expected UUID"
+                      value={deviceState?.expected_uuid || "Unknown"}
+                      mono
+                    />
+                    <InfoRow
+                      label="Actual UUID"
+                      value={deviceState?.actual_uuid || "Unknown"}
+                      mono
+                    />
+                  </>
+                ) : null}
                 <InfoRow
                   label="Mission"
                   value={missionName}

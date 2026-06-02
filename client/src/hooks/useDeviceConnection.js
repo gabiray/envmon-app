@@ -4,7 +4,7 @@ import api from "../services/api";
 export function useDeviceConnection(selectedDeviceId, options = {}) {
   const { onConnected = null } = options;
 
-  const [uiStatus, setUiStatus] = useState("inactive"); // inactive | connected | out_of_range
+  const [uiStatus, setUiStatus] = useState("inactive"); // inactive | connected | out_of_range | stale
   const [deviceState, setDeviceState] = useState(null);
   const [missionRunning, setMissionRunning] = useState(false);
 
@@ -20,6 +20,11 @@ export function useDeviceConnection(selectedDeviceId, options = {}) {
       const { data } = await api.get("/device/status");
       setDeviceState(data);
 
+      if (data?.connection_state === "uuid_mismatch") {
+        setUiStatus("stale");
+        return data;
+      }
+
       const runningNow =
         Boolean(data?.running) ||
         ["ARMING", "RUNNING"].includes(String(data?.state || "").toUpperCase());
@@ -29,7 +34,17 @@ export function useDeviceConnection(selectedDeviceId, options = {}) {
       onConnected?.(selectedDeviceId);
 
       return data;
-    } catch {
+    } catch (error) {
+      const status = error?.response?.status;
+      const data = error?.response?.data;
+
+      if (status === 409 || data?.connection_state === "uuid_mismatch") {
+        setDeviceState(data || null);
+        setMissionRunning(false);
+        setUiStatus("stale");
+        return data || null;
+      }
+
       setDeviceState((prev) => prev);
       setMissionRunning((prev) => prev);
       setUiStatus(missionRunning ? "out_of_range" : "inactive");
