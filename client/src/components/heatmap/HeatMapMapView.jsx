@@ -78,7 +78,9 @@ function buildCaptureImageUrl(missionId, imageId) {
 
 function getDisplayName(device) {
   if (!device) return "No device";
-  return device.nickname || device.hostname || device.info?.hostname || "Device";
+  return (
+    device.nickname || device.hostname || device.info?.hostname || "Device"
+  );
 }
 
 function formatHeatValue(value) {
@@ -659,6 +661,7 @@ export default function HeatMapMapView({
   const capturePopupRef = useRef(null);
   const capturePopupPinnedRef = useRef(false);
   const markersRef = useRef([]);
+  const lastAutoFitKeyRef = useRef(null);
 
   const [viewMode, setViewMode] = useState("globe");
   const [globePerspective, setGlobePerspective] = useState("3d");
@@ -669,10 +672,15 @@ export default function HeatMapMapView({
   const [capturePreview, setCapturePreview] = useState(null);
 
   const hasActiveDevice = Boolean(activeDevice && selectedDeviceId !== "none");
-  const deviceName = useMemo(() => getDisplayName(activeDevice), [activeDevice]);
+  const deviceName = useMemo(
+    () => getDisplayName(activeDevice),
+    [activeDevice],
+  );
 
   const selectedLocationPin = useMemo(() => {
-    return locationPins.find((item) => item.key === selectedLocationKey) || null;
+    return (
+      locationPins.find((item) => item.key === selectedLocationKey) || null
+    );
   }, [locationPins, selectedLocationKey]);
 
   const legendMode = useMemo(() => {
@@ -915,14 +923,16 @@ export default function HeatMapMapView({
       try {
         popup
           .setLngLat(e.lngLat)
-          .setHTML(`
+          .setHTML(
+            `
             <div style="min-width:140px">
               <div style="font-size:12px;font-weight:700;margin-bottom:4px;">Heatmap cell</div>
               <div style="font-size:12px;opacity:.8;">Metric: ${heatmapMetric}</div>
               <div style="font-size:12px;opacity:.8;">Value: ${formatHeatValue(value)}</div>
               <div style="font-size:12px;opacity:.8;">Samples: ${samples ?? 0}</div>
             </div>
-          `)
+          `,
+          )
           .addTo(map);
       } catch {}
     };
@@ -1241,109 +1251,98 @@ export default function HeatMapMapView({
   ]);
 
   useEffect(() => {
-    if (!mapRef.current || !selectedLocationPin) return;
-    if (selectedMission) return;
-    if (showTrack || showHeatmap || showCaptures) return;
+    const map = mapRef.current;
+    if (!map) return;
 
-    fitCoords(
-      mapRef.current,
-      [[selectedLocationPin.lon, selectedLocationPin.lat]],
-      viewMode,
-      globePerspective,
-      mapPerspective,
-    );
+    const viewKey = getViewKey(viewMode, globePerspective, mapPerspective);
+
+    if (selectedLocationPin && !selectedMission) {
+      const fitKey = [
+        "location",
+        selectedLocationPin.key,
+        viewKey,
+        mapVersion,
+      ].join(":");
+
+      if (lastAutoFitKeyRef.current === fitKey) return;
+
+      lastAutoFitKeyRef.current = fitKey;
+
+      fitCoords(
+        map,
+        [[selectedLocationPin.lon, selectedLocationPin.lat]],
+        viewMode,
+        globePerspective,
+        mapPerspective,
+      );
+
+      return;
+    }
+
+    const missionId = selectedMission?.missionId || null;
+    if (!missionId) return;
+
+    const fitKey = ["mission", missionId, viewKey, mapVersion].join(":");
+
+    if (lastAutoFitKeyRef.current === fitKey) return;
+
+    const hasVisibleLayer = showTrack || showHeatmap || showCaptures;
+
+    const hasTrackBounds =
+      showTrack && Array.isArray(trackBounds) && trackBounds.length > 0;
+
+    const hasHeatBounds =
+      showHeatmap && Array.isArray(heatBounds) && heatBounds.length > 0;
+
+    const hasCaptureBounds =
+      showCaptures && Array.isArray(captureBounds) && captureBounds.length > 0;
+
+    // Dacă avem layere active, nu facem fallback imediat pe start.
+    // Așteptăm să vină datele reale ale misiunii, altfel focus-ul se consumă prea devreme.
+    if (
+      hasVisibleLayer &&
+      layerLoading &&
+      !hasTrackBounds &&
+      !hasHeatBounds &&
+      !hasCaptureBounds
+    ) {
+      return;
+    }
+
+    let coords = [];
+
+    if (hasTrackBounds) {
+      coords = trackBounds;
+    } else if (hasHeatBounds) {
+      coords = heatBounds;
+    } else if (hasCaptureBounds) {
+      coords = captureBounds;
+    } else {
+      const lat = selectedMission.start?.lat;
+      const lon = selectedMission.start?.lon;
+
+      if (lat != null && lon != null) {
+        coords = [[Number(lon), Number(lat)]];
+      }
+    }
+
+    if (!coords.length) return;
+
+    lastAutoFitKeyRef.current = fitKey;
+
+    fitCoords(map, coords, viewMode, globePerspective, mapPerspective);
   }, [
     mapVersion,
     selectedLocationPin,
-    selectedMission,
+    selectedMission?.missionId,
+    selectedMission?.start?.lat,
+    selectedMission?.start?.lon,
+    layerLoading,
     showTrack,
     showHeatmap,
     showCaptures,
-    viewMode,
-    globePerspective,
-    mapPerspective,
-  ]);
-
-  useEffect(() => {
-    if (!mapRef.current || !selectedMission) return;
-    if (showTrack || showHeatmap || showCaptures) return;
-
-    const lat = selectedMission.start?.lat;
-    const lon = selectedMission.start?.lon;
-    if (lat == null || lon == null) return;
-
-    fitCoords(
-      mapRef.current,
-      [[lon, lat]],
-      viewMode,
-      globePerspective,
-      mapPerspective,
-    );
-  }, [
-    mapVersion,
-    selectedMission,
-    showTrack,
-    showHeatmap,
-    showCaptures,
-    viewMode,
-    globePerspective,
-    mapPerspective,
-  ]);
-
-  useEffect(() => {
-    if (!mapRef.current || !showTrack) return;
-    if (!trackBounds?.length) return;
-
-    fitCoords(
-      mapRef.current,
-      trackBounds,
-      viewMode,
-      globePerspective,
-      mapPerspective,
-    );
-  }, [
-    mapVersion,
-    showTrack,
     trackBounds,
-    viewMode,
-    globePerspective,
-    mapPerspective,
-  ]);
-
-  useEffect(() => {
-    if (!mapRef.current || !showHeatmap) return;
-    if (!heatBounds) return;
-
-    fitCoords(
-      mapRef.current,
-      heatBounds,
-      viewMode,
-      globePerspective,
-      mapPerspective,
-    );
-  }, [
-    mapVersion,
-    showHeatmap,
     heatBounds,
-    viewMode,
-    globePerspective,
-    mapPerspective,
-  ]);
-
-  useEffect(() => {
-    if (!mapRef.current || !showCaptures) return;
-    if (!captureBounds?.length) return;
-
-    fitCoords(
-      mapRef.current,
-      captureBounds,
-      viewMode,
-      globePerspective,
-      mapPerspective,
-    );
-  }, [
-    mapVersion,
-    showCaptures,
     captureBounds,
     viewMode,
     globePerspective,
@@ -1576,17 +1575,16 @@ export default function HeatMapMapView({
                 </div>
                 <div className="mt-1 text-sm text-base-content/60">
                   {capturePreview.tsEpoch
-                    ? new Date(Number(capturePreview.tsEpoch) * 1000).toLocaleString(
-                        "ro-RO",
-                        {
-                          year: "numeric",
-                          month: "2-digit",
-                          day: "2-digit",
-                          hour: "2-digit",
-                          minute: "2-digit",
-                          second: "2-digit",
-                        },
-                      )
+                    ? new Date(
+                        Number(capturePreview.tsEpoch) * 1000,
+                      ).toLocaleString("ro-RO", {
+                        year: "numeric",
+                        month: "2-digit",
+                        day: "2-digit",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                        second: "2-digit",
+                      })
                     : "Unknown time"}
                   {" • "}
                   {capturePreview.altM != null

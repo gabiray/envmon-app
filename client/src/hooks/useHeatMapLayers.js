@@ -182,10 +182,6 @@ function buildImagePointsGeoJson(images) {
 
 export default function useHeatMapLayers({
   selectedMission = null,
-  layerMode = "none",
-  showTrack = false,
-  showHeatmap = false,
-  showCaptures = false,
   heatmapMetric = "temp_c",
   heatmapCellM = 15,
 }) {
@@ -195,14 +191,13 @@ export default function useHeatMapLayers({
   const [heatGrid, setHeatGrid] = useState(null);
   const [imagePoints, setImagePoints] = useState([]);
 
+  const missionId = selectedMission?.missionId || null;
+
   useEffect(() => {
     let cancelled = false;
 
     async function loadLayerData() {
-      const hasMission = Boolean(selectedMission?.missionId);
-      const hasAnyLayer = showTrack || showHeatmap || showCaptures;
-
-      if (!hasMission || !hasAnyLayer || layerMode === "none") {
+      if (!missionId) {
         setLoading(false);
         setErrorText("");
         setTrackPoints([]);
@@ -216,19 +211,13 @@ export default function useHeatMapLayers({
 
       try {
         const [trackResult, heatmapResult, imagesResult] = await Promise.all([
-          showTrack
-            ? fetchMissionTrack(selectedMission.missionId)
-            : Promise.resolve([]),
-          showHeatmap
-            ? fetchHeatGrid({
-                mission_id: selectedMission.missionId,
-                metric: heatmapMetric,
-                cell_m: heatmapCellM,
-              })
-            : Promise.resolve(null),
-          showCaptures
-            ? fetchMissionImages(selectedMission.missionId)
-            : Promise.resolve([]),
+          fetchMissionTrack(missionId),
+          fetchHeatGrid({
+            mission_id: missionId,
+            metric: heatmapMetric,
+            cell_m: heatmapCellM,
+          }),
+          fetchMissionImages(missionId),
         ]);
 
         if (cancelled) return;
@@ -245,7 +234,7 @@ export default function useHeatMapLayers({
         setErrorText(
           error?.response?.data?.error ||
             error?.message ||
-            "Failed to load map layer data."
+            "Failed to load map layer data.",
         );
       } finally {
         if (!cancelled) {
@@ -259,15 +248,7 @@ export default function useHeatMapLayers({
     return () => {
       cancelled = true;
     };
-  }, [
-    selectedMission,
-    layerMode,
-    showTrack,
-    showHeatmap,
-    showCaptures,
-    heatmapMetric,
-    heatmapCellM,
-  ]);
+  }, [missionId, heatmapMetric, heatmapCellM]);
 
   const trackGeoJson = useMemo(() => {
     return buildTrackGeoJson(trackPoints);

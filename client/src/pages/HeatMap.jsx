@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   useNavigate,
   useOutletContext,
@@ -10,6 +10,18 @@ import HeatMapSidebar from "../components/heatmap/HeatMapSidebar";
 import HeatMapMapView from "../components/heatmap/HeatMapMapView";
 import useHeatMapData from "../hooks/useHeatMapData";
 import useHeatMapLayers from "../hooks/useHeatMapLayers";
+
+const EMPTY_LAYERS = {
+  track: false,
+  heatmap: false,
+  captures: false,
+};
+
+const DEFAULT_MISSION_LAYERS = {
+  track: true,
+  heatmap: true,
+  captures: true,
+};
 
 export default function HeatMap() {
   const {
@@ -35,11 +47,11 @@ export default function HeatMap() {
   const [selectedMissionId, setSelectedMissionId] = useState(null);
   const [selectedLocationKey, setSelectedLocationKey] = useState(null);
   const [expandedMissionIds, setExpandedMissionIds] = useState([]);
-  const [visibleLayers, setVisibleLayers] = useState({
-    track: false,
-    heatmap: false,
-    captures: false,
-  });
+
+  const [returnLocationKey, setReturnLocationKey] = useState(null);
+  const suppressDeepLinkRef = useRef(false);
+
+  const [visibleLayers, setVisibleLayers] = useState(EMPTY_LAYERS);
   const [heatmapMetric, setHeatmapMetric] = useState("temp_c");
   const [heatmapCellM, setHeatmapCellM] = useState(15);
 
@@ -65,11 +77,7 @@ export default function HeatMap() {
 
     if (!missionMap.has(selectedMissionId)) {
       setSelectedMissionId(null);
-      setVisibleLayers({
-        track: false,
-        heatmap: false,
-        captures: false,
-      });
+      setVisibleLayers(EMPTY_LAYERS);
     }
   }, [selectedMissionId, missionMap]);
 
@@ -132,38 +140,63 @@ export default function HeatMap() {
   ]);
 
   useEffect(() => {
-    if (!requestedMissionId || loading) return;
+    if (!requestedMissionId) {
+      suppressDeepLinkRef.current = false;
+      return;
+    }
+
+    if (suppressDeepLinkRef.current) return;
+
+    if (loading) return;
+    if (requestedMissionId === selectedMissionId) return;
     if (!missionMap.has(requestedMissionId)) return;
 
     setSelectedMissionId(requestedMissionId);
     setSelectedLocationKey(null);
-    setVisibleLayers({
-      track: true,
-      heatmap: true,
-      captures: true,
-    });
+    setReturnLocationKey(null);
+    setVisibleLayers(DEFAULT_MISSION_LAYERS);
+
     setExpandedMissionIds((prev) =>
       prev.includes(requestedMissionId) ? prev : [...prev, requestedMissionId],
     );
-  }, [requestedMissionId, loading, missionMap]);
+  }, [requestedMissionId, selectedMissionId, loading, missionMap]);
+
+  function clearMissionSearchParams() {
+    suppressDeepLinkRef.current = true;
+
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete("missionId");
+        next.delete("deviceId");
+        return next;
+      },
+      { replace: true },
+    );
+  }
+
+  function toggleLayer(layerName) {
+    if (!selectedMission) return;
+
+    setVisibleLayers((prev) => ({
+      ...prev,
+      [layerName]: !prev[layerName],
+    }));
+  }
 
   function handleProfileSelect(nextType) {
     setProfileType(nextType);
     setSelectedMissionId(null);
     setSelectedLocationKey(null);
     setExpandedMissionIds([]);
-    setVisibleLayers({
-      track: false,
-      heatmap: false,
-      captures: false,
-    });
+    setVisibleLayers(EMPTY_LAYERS);
 
     if (activeDevice) {
       onProfileChange(nextType);
     }
 
     if (requestedMissionId) {
-      setSearchParams({}, { replace: true });
+      clearMissionSearchParams();
     }
   }
 
@@ -176,16 +209,37 @@ export default function HeatMap() {
   }
 
   function handleSelectLocationPin(locationKey) {
+    setReturnLocationKey(locationKey);
     setSelectedLocationKey(locationKey);
+    setSelectedMissionId(null);
+    setVisibleLayers(EMPTY_LAYERS);
+    clearMissionSearchParams();
   }
 
   async function handleSelectMission(mission) {
     if (!mission) return;
 
+    if (selectedLocationKey) {
+      setReturnLocationKey(selectedLocationKey);
+    }
+
+    suppressDeepLinkRef.current = false;
+
     setSelectedMissionId(mission.missionId);
     setSelectedLocationKey(null);
+    setVisibleLayers(DEFAULT_MISSION_LAYERS);
 
-    setSearchParams({ missionId: mission.missionId }, { replace: true });
+    setExpandedMissionIds((prev) =>
+      prev.includes(mission.missionId) ? prev : [...prev, mission.missionId],
+    );
+
+    setSearchParams(
+      {
+        missionId: mission.missionId,
+        ...(mission.deviceUuid ? { deviceId: mission.deviceUuid } : {}),
+      },
+      { replace: true },
+    );
 
     if (mission.deviceUuid && mission.deviceUuid !== selectedDeviceId) {
       await onDeviceChange(mission.deviceUuid);
@@ -193,17 +247,15 @@ export default function HeatMap() {
   }
 
   function handleBackToExplorer() {
-    setSelectedMissionId(null);
-    setVisibleLayers({
-      track: false,
-      heatmap: false,
-      captures: false,
-    });
-    setSelectedLocationKey(null);
+    const locationToReturn = returnLocationKey;
 
-    if (requestedMissionId) {
-      setSearchParams({}, { replace: true });
-    }
+    setSelectedMissionId(null);
+    setVisibleLayers(EMPTY_LAYERS);
+
+    setSelectedLocationKey(locationToReturn || null);
+    setReturnLocationKey(null);
+
+    clearMissionSearchParams();
   }
 
   function handleCloseLocationPopover() {
@@ -242,24 +294,9 @@ export default function HeatMap() {
             showCaptures={visibleLayers.captures}
             heatmapMetric={heatmapMetric}
             heatmapCellM={heatmapCellM}
-            onToggleTrack={() =>
-              setVisibleLayers((prev) => ({
-                ...prev,
-                track: !prev.track,
-              }))
-            }
-            onToggleHeatmap={() =>
-              setVisibleLayers((prev) => ({
-                ...prev,
-                heatmap: !prev.heatmap,
-              }))
-            }
-            onToggleCaptures={() =>
-              setVisibleLayers((prev) => ({
-                ...prev,
-                captures: !prev.captures,
-              }))
-            }
+            onToggleTrack={() => toggleLayer("track")}
+            onToggleHeatmap={() => toggleLayer("heatmap")}
+            onToggleCaptures={() => toggleLayer("captures")}
             onHeatmapMetricChange={setHeatmapMetric}
             onHeatmapCellMChange={setHeatmapCellM}
             onOpenAnalytics={handleOpenAnalytics}
