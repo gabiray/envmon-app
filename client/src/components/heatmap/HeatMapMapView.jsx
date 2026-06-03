@@ -506,6 +506,46 @@ function fitCoords(map, coords, viewMode, globePerspective, mapPerspective) {
   });
 }
 
+function focusLocationPin(
+  map,
+  pin,
+  viewMode,
+  globePerspective,
+  mapPerspective,
+) {
+  if (!map || !pin?.lat || !pin?.lon) return;
+
+  const center = [Number(pin.lon), Number(pin.lat)];
+
+  let camera = {
+    center,
+    zoom: 13.2,
+    pitch: 0,
+    bearing: 0,
+    speed: 0.85,
+    curve: 1.1,
+    essential: true,
+  };
+
+  if (viewMode === "globe") {
+    camera = {
+      ...camera,
+      zoom: globePerspective === "3d" ? 12.6 : 13.1,
+      pitch: globePerspective === "3d" ? 28 : 0,
+      bearing: 0,
+    };
+  } else if (mapPerspective === "3d") {
+    camera = {
+      ...camera,
+      zoom: 13.4,
+      pitch: 45,
+      bearing: 0,
+    };
+  }
+
+  map.flyTo(camera);
+}
+
 function hasLayerSafe(map, layerId) {
   if (!map || !layerId) return false;
 
@@ -999,6 +1039,10 @@ export default function HeatMapMapView({
   const markersRef = useRef([]);
   const lastAutoFitKeyRef = useRef(null);
 
+  const initialLocal2DFallbackDoneRef = useRef(false);
+  const pendingLocal2DFallbackKeyRef = useRef(null);
+  const userViewModeTouchedRef = useRef(false);
+
   const [viewMode, setViewMode] = useState("globe");
   const [globePerspective, setGlobePerspective] = useState("3d");
   const [mapPerspective, setMapPerspective] = useState("3d");
@@ -1006,6 +1050,8 @@ export default function HeatMapMapView({
   const [popoverPosition, setPopoverPosition] = useState(null);
   const [mapVersion, setMapVersion] = useState(0);
   const [capturePreview, setCapturePreview] = useState(null);
+
+  const [legendCollapsed, setLegendCollapsed] = useState(true);
 
   const hasActiveDevice = Boolean(activeDevice && selectedDeviceId !== "none");
   const deviceName = useMemo(
@@ -1018,6 +1064,20 @@ export default function HeatMapMapView({
       locationPins.find((item) => item.key === selectedLocationKey) || null
     );
   }, [locationPins, selectedLocationKey]);
+
+  const localFocusSelectionKey = useMemo(() => {
+    const missionId = selectedMission?.missionId || null;
+
+    if (missionId) {
+      return `mission:${missionId}`;
+    }
+
+    if (selectedLocationPin?.key) {
+      return `location:${selectedLocationPin.key}`;
+    }
+
+    return null;
+  }, [selectedMission?.missionId, selectedLocationPin?.key]);
 
   const legendMode = useMemo(() => {
     if (showTrack && showHeatmap) return "mixed";
@@ -1551,8 +1611,49 @@ export default function HeatMapMapView({
   ]);
 
   useEffect(() => {
+    if (!localFocusSelectionKey) {
+      pendingLocal2DFallbackKeyRef.current = null;
+      return;
+    }
+
+    if (userViewModeTouchedRef.current) {
+      return;
+    }
+
+    if (initialLocal2DFallbackDoneRef.current) {
+      return;
+    }
+
+    initialLocal2DFallbackDoneRef.current = true;
+    pendingLocal2DFallbackKeyRef.current = localFocusSelectionKey;
+
+    setAutoRotate(false);
+    setViewMode("map");
+    setMapPerspective("2d");
+
+    lastAutoFitKeyRef.current = null;
+  }, [localFocusSelectionKey]);
+
+  useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
+
+    if (
+      localFocusSelectionKey &&
+      pendingLocal2DFallbackKeyRef.current === localFocusSelectionKey &&
+      (viewMode !== "map" || mapPerspective !== "2d")
+    ) {
+      return;
+    }
+
+    if (
+      localFocusSelectionKey &&
+      pendingLocal2DFallbackKeyRef.current === localFocusSelectionKey &&
+      viewMode === "map" &&
+      mapPerspective === "2d"
+    ) {
+      pendingLocal2DFallbackKeyRef.current = null;
+    }
 
     const viewKey = getViewKey(viewMode, globePerspective, mapPerspective);
 
@@ -1568,9 +1669,9 @@ export default function HeatMapMapView({
 
       lastAutoFitKeyRef.current = fitKey;
 
-      fitCoords(
+      focusLocationPin(
         map,
-        [[selectedLocationPin.lon, selectedLocationPin.lat]],
+        selectedLocationPin,
         viewMode,
         globePerspective,
         mapPerspective,
@@ -1597,8 +1698,6 @@ export default function HeatMapMapView({
     const hasCaptureBounds =
       showCaptures && Array.isArray(captureBounds) && captureBounds.length > 0;
 
-    // Dacă avem layere active, nu facem fallback imediat pe start.
-    // Așteptăm să vină datele reale ale misiunii, altfel focus-ul se consumă prea devreme.
     if (
       hasVisibleLayer &&
       layerLoading &&
@@ -1647,7 +1746,15 @@ export default function HeatMapMapView({
     viewMode,
     globePerspective,
     mapPerspective,
+    localFocusSelectionKey,
   ]);
+
+  function markManualViewChange() {
+    userViewModeTouchedRef.current = true;
+    initialLocal2DFallbackDoneRef.current = true;
+    pendingLocal2DFallbackKeyRef.current = null;
+    lastAutoFitKeyRef.current = null;
+  }
 
   function handleReset() {
     const camera = getCameraPreset(viewMode, globePerspective, mapPerspective);
@@ -1699,11 +1806,14 @@ export default function HeatMapMapView({
             icon={viewMode === "globe" ? FiGlobe : FiMap}
             label={viewMode === "globe" ? "Globe view" : "Map view"}
             onClick={() => {
+              markManualViewChange();
+
               if (viewMode === "globe") {
                 setViewMode("map");
                 setAutoRotate(false);
               } else {
                 setViewMode("globe");
+
                 if (globePerspective === "3d") {
                   setAutoRotate(true);
                 }
@@ -1717,6 +1827,8 @@ export default function HeatMapMapView({
               icon={FiLayers}
               label={globePerspective === "3d" ? "Globe 3D" : "Globe 2D"}
               onClick={() => {
+                markManualViewChange();
+
                 setGlobePerspective((prev) => (prev === "3d" ? "2d" : "3d"));
               }}
             />
@@ -1726,6 +1838,8 @@ export default function HeatMapMapView({
               icon={FiLayers}
               label={mapPerspective === "3d" ? "Map 3D" : "Map 2D"}
               onClick={() => {
+                markManualViewChange();
+
                 setMapPerspective((prev) => (prev === "3d" ? "2d" : "3d"));
               }}
             />
@@ -1773,7 +1887,12 @@ export default function HeatMapMapView({
         </div>
       </div>
 
-      <div className="pointer-events-none absolute right-4 top-20 z-20 w-[320px] max-w-[calc(100%-2rem)]">
+      <div
+        className={[
+          "pointer-events-none absolute right-4 top-20 z-20 max-w-[calc(100%-2rem)] transition-all duration-200",
+          legendCollapsed ? "w-auto" : "w-[320px]",
+        ].join(" ")}
+      >
         <div className="pointer-events-auto">
           <HeatMapLegend
             layerMode={legendMode}
@@ -1783,6 +1902,8 @@ export default function HeatMapMapView({
             loading={layerLoading}
             errorText={layerErrorText}
             showCaptures={showCaptures}
+            collapsed={legendCollapsed}
+            onToggleCollapsed={() => setLegendCollapsed((prev) => !prev)}
           />
         </div>
       </div>
