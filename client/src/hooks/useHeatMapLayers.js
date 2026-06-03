@@ -31,6 +31,7 @@ function normalizeImagePoints(images) {
       lat: Number(item.lat),
       lon: Number(item.lon),
       alt_m: item.alt_m != null ? Number(item.alt_m) : null,
+      telemetry: item.telemetry || null,
     }));
 }
 
@@ -170,7 +171,22 @@ function buildImagePointsGeoJson(images) {
         index: index + 1,
         filename: item.filename,
         ts_epoch: item.ts_epoch,
+        lat: item.lat,
+        lon: item.lon,
         alt_m: item.alt_m,
+
+        telemetry_ts_epoch: item.telemetry?.ts_epoch ?? null,
+        telemetry_dt_s: item.telemetry?.dt_s ?? null,
+        telemetry_lat: item.telemetry?.lat ?? null,
+        telemetry_lon: item.telemetry?.lon ?? null,
+        telemetry_alt_m: item.telemetry?.alt_m ?? null,
+        fix_quality: item.telemetry?.fix_quality ?? null,
+        satellites: item.telemetry?.satellites ?? null,
+        hdop: item.telemetry?.hdop ?? null,
+        temp_c: item.telemetry?.temp_c ?? null,
+        hum_pct: item.telemetry?.hum_pct ?? null,
+        press_hpa: item.telemetry?.press_hpa ?? null,
+        gas_ohms: item.telemetry?.gas_ohms ?? null,
       },
       geometry: {
         type: "Point",

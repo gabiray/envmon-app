@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import * as maptilersdk from "@maptiler/sdk";
 import "@maptiler/sdk/dist/maptiler-sdk.css";
 import {
@@ -9,6 +10,11 @@ import {
   FiX,
   FiPause,
   FiPlay,
+  FiThermometer,
+  FiDroplet,
+  FiClock,
+  FiMapPin,
+  FiActivity,
 } from "react-icons/fi";
 
 import api from "../../services/api";
@@ -65,6 +71,201 @@ const HEAT_LINE_LAYER_ID = "heatmap-cells-line-layer";
 const IMAGE_POINTS_SOURCE_ID = "heatmap-image-points-source";
 const IMAGE_POINTS_LAYER_ID = "heatmap-image-points-layer";
 
+function formatDateTime(tsEpoch) {
+  if (!tsEpoch) return "—";
+
+  return new Date(Number(tsEpoch) * 1000).toLocaleString("ro-RO", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+}
+
+function formatNumber(value, decimals = 2, suffix = "") {
+  if (value == null || Number.isNaN(Number(value))) return "—";
+  return `${Number(value).toFixed(decimals)}${suffix}`;
+}
+
+function CaptureAnalysisModal({ capture, onClose }) {
+  if (!capture) return null;
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          onClose();
+        }
+      }}
+    >
+      <div className="flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-[2rem] border border-base-300 bg-base-100 shadow-2xl">
+        <div className="flex items-start justify-between gap-4 border-b border-base-300 px-6 py-5">
+          <div className="min-w-0">
+            <div className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">
+              Capture analysis
+            </div>
+
+            <h2 className="mt-1 truncate text-xl font-bold text-base-content">
+              {capture.filename}
+            </h2>
+
+            <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-base-content/60">
+              <span>{formatDateTime(capture.tsEpoch)}</span>
+              <span>•</span>
+              <span>{formatNumber(capture.altM, 1, " m")}</span>
+              {capture.telemetryDtS != null ? (
+                <>
+                  <span>•</span>
+                  <span>
+                    telemetry match: ±
+                    {formatNumber(capture.telemetryDtS, 2, " s")}
+                  </span>
+                </>
+              ) : null}
+            </div>
+          </div>
+
+          <button
+            type="button"
+            className="btn btn-sm btn-circle btn-ghost"
+            onClick={onClose}
+            aria-label="Close capture analysis"
+          >
+            <FiX />
+          </button>
+        </div>
+
+        <div className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto lg:grid-cols-[minmax(0,1.45fr)_minmax(340px,0.75fr)]">
+          <div className="flex min-h-[360px] items-center justify-center bg-black p-4">
+            <img
+              src={capture.imageUrl}
+              alt={capture.filename}
+              className="max-h-[72vh] w-auto max-w-full rounded-2xl object-contain"
+            />
+          </div>
+
+          <div className="space-y-4 border-t border-base-300 p-5 lg:border-l lg:border-t-0">
+            <div>
+              <div className="text-sm font-bold text-base-content">
+                Associated environmental data
+              </div>
+              <div className="mt-1 text-sm text-base-content/60">
+                Values are taken from the closest telemetry sample to the image
+                timestamp.
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
+              <CaptureMetricCard
+                icon={FiThermometer}
+                label="Temperature"
+                value={formatNumber(capture.tempC, 2, " °C")}
+              />
+              <CaptureMetricCard
+                icon={FiDroplet}
+                label="Humidity"
+                value={formatNumber(capture.humPct, 2, " %")}
+              />
+              <CaptureMetricCard
+                icon={FiActivity}
+                label="Pressure"
+                value={formatNumber(capture.pressHpa, 2, " hPa")}
+              />
+              <CaptureMetricCard
+                icon={FiActivity}
+                label="Gas"
+                value={formatNumber(capture.gasOhms, 0, " Ω")}
+              />
+            </div>
+
+            <details className="collapse collapse-arrow rounded-2xl border border-base-300 bg-base-200/40">
+              <summary className="collapse-title text-sm font-semibold">
+                Extended capture data
+              </summary>
+
+              <div className="collapse-content">
+                <div className="grid gap-2 text-sm">
+                  <div className="flex justify-between gap-3">
+                    <span className="text-base-content/55">Image time</span>
+                    <span className="text-right font-medium">
+                      {formatDateTime(capture.tsEpoch)}
+                    </span>
+                  </div>
+
+                  <div className="flex justify-between gap-3">
+                    <span className="text-base-content/55">Telemetry time</span>
+                    <span className="text-right font-medium">
+                      {formatDateTime(capture.telemetryTsEpoch)}
+                    </span>
+                  </div>
+
+                  <div className="flex justify-between gap-3">
+                    <span className="text-base-content/55">Coordinates</span>
+                    <span className="text-right font-medium">
+                      {formatNumber(capture.lat, 6)},{" "}
+                      {formatNumber(capture.lon, 6)}
+                    </span>
+                  </div>
+
+                  <div className="flex justify-between gap-3">
+                    <span className="text-base-content/55">Altitude</span>
+                    <span className="text-right font-medium">
+                      {formatNumber(capture.altM, 1, " m")}
+                    </span>
+                  </div>
+
+                  <div className="flex justify-between gap-3">
+                    <span className="text-base-content/55">Satellites</span>
+                    <span className="text-right font-medium">
+                      {formatNumber(capture.satellites, 0)}
+                    </span>
+                  </div>
+
+                  <div className="flex justify-between gap-3">
+                    <span className="text-base-content/55">HDOP</span>
+                    <span className="text-right font-medium">
+                      {formatNumber(capture.hdop, 2)}
+                    </span>
+                  </div>
+
+                  <div className="flex justify-between gap-3">
+                    <span className="text-base-content/55">Fix quality</span>
+                    <span className="text-right font-medium">
+                      {formatNumber(capture.fixQuality, 0)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </details>
+
+            <div className="rounded-2xl border border-primary/15 bg-primary/5 px-4 py-3 text-sm text-base-content/70">
+              This view links the visual capture with the environmental
+              telemetry recorded during the same mission, which is useful for
+              later analysis and report interpretation.
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+function CaptureMetricCard({ icon: Icon, label, value }) {
+  return (
+    <div className="rounded-2xl border border-base-300 bg-base-200/45 px-4 py-3">
+      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-base-content/45">
+        {Icon ? <Icon className="text-primary" /> : null}
+        {label}
+      </div>
+      <div className="mt-2 text-lg font-bold text-base-content">{value}</div>
+    </div>
+  );
+}
+
 function buildCaptureImageUrl(missionId, imageId) {
   if (!missionId || imageId == null) return null;
 
@@ -74,6 +275,141 @@ function buildCaptureImageUrl(missionId, imageId) {
       : `${window.location.origin}/api`;
 
   return `${baseUrl}/db/missions/${missionId}/images/${imageId}/file`;
+}
+
+function buildCapturePayloadFromFeature(feature, missionId) {
+  if (!feature || !missionId) return null;
+
+  const props = feature.properties || {};
+  const coordinates = feature.geometry?.coordinates || [];
+
+  const imageId = props.id;
+  const imageUrl = buildCaptureImageUrl(missionId, imageId);
+
+  if (!imageUrl) return null;
+
+  return {
+    imageId,
+    imageUrl,
+    filename: props.filename || "image.jpg",
+
+    tsEpoch: props.ts_epoch ?? null,
+    lat: props.lat ?? coordinates[1] ?? null,
+    lon: props.lon ?? coordinates[0] ?? null,
+    altM: props.alt_m ?? null,
+
+    telemetryTsEpoch: props.telemetry_ts_epoch ?? null,
+    telemetryDtS: props.telemetry_dt_s ?? null,
+    tempC: props.temp_c ?? null,
+    humPct: props.hum_pct ?? null,
+    pressHpa: props.press_hpa ?? null,
+    gasOhms: props.gas_ohms ?? null,
+    fixQuality: props.fix_quality ?? null,
+    satellites: props.satellites ?? null,
+    hdop: props.hdop ?? null,
+  };
+}
+
+function buildCapturePreviewPopup({
+  capture,
+  onOpen,
+  onMouseEnter,
+  onMouseLeave,
+}) {
+  const wrapper = document.createElement("div");
+  wrapper.style.minWidth = "220px";
+  wrapper.style.maxWidth = "240px";
+  wrapper.style.cursor = "pointer";
+  wrapper.style.fontFamily = "Inter, system-ui, sans-serif";
+
+  wrapper.addEventListener("mouseenter", onMouseEnter);
+  wrapper.addEventListener("mouseleave", onMouseLeave);
+
+  wrapper.onclick = (event) => {
+    event.stopPropagation();
+    onOpen();
+  };
+
+  const header = document.createElement("div");
+  header.style.display = "flex";
+  header.style.alignItems = "center";
+  header.style.justifyContent = "space-between";
+  header.style.gap = "8px";
+  header.style.marginBottom = "8px";
+
+  const titleRow = document.createElement("div");
+  titleRow.style.display = "flex";
+  titleRow.style.alignItems = "center";
+  titleRow.style.gap = "4px";
+  titleRow.style.fontSize = "13px";
+  titleRow.style.fontWeight = "700";
+  titleRow.innerHTML = `<span>Capture point</span>`;
+
+  header.appendChild(titleRow);
+  wrapper.appendChild(header);
+
+  const imageWrap = document.createElement("div");
+  imageWrap.style.position = "relative";
+  imageWrap.style.width = "100%";
+  imageWrap.style.height = "110px";
+  imageWrap.style.marginBottom = "8px";
+  imageWrap.style.borderRadius = "10px";
+  imageWrap.style.overflow = "hidden";
+  imageWrap.style.border = "1px solid rgba(148,163,184,0.25)";
+  imageWrap.style.background = "#020617";
+
+  const img = document.createElement("img");
+  img.src = capture.imageUrl;
+  img.alt = capture.filename || "image.jpg";
+  img.style.width = "100%";
+  img.style.height = "100%";
+  img.style.objectFit = "cover";
+  img.loading = "lazy";
+
+  img.onerror = () => {
+    imageWrap.style.display = "none";
+  };
+
+  imageWrap.appendChild(img);
+  wrapper.appendChild(imageWrap);
+
+  const fileRow = document.createElement("div");
+  fileRow.style.fontSize = "12px";
+  fileRow.style.opacity = ".88";
+  fileRow.style.marginBottom = "3px";
+  fileRow.style.lineHeight = "1.25";
+  fileRow.innerHTML = `<strong>File:</strong> ${capture.filename || "image.jpg"}`;
+
+  const timeRow = document.createElement("div");
+  timeRow.style.fontSize = "12px";
+  timeRow.style.opacity = ".88";
+  timeRow.style.marginBottom = "3px";
+  timeRow.style.lineHeight = "1.25";
+  timeRow.innerHTML = `<strong>Captured:</strong> ${formatDateTime(capture.tsEpoch)}`;
+
+  const altRow = document.createElement("div");
+  altRow.style.fontSize = "12px";
+  altRow.style.opacity = ".88";
+  altRow.style.marginBottom = "7px";
+  altRow.style.lineHeight = "1.25";
+  altRow.innerHTML = `<strong>Altitude:</strong> ${formatNumber(
+    capture.altM,
+    1,
+    " m",
+  )}`;
+
+  const hintRow = document.createElement("div");
+  hintRow.style.fontSize = "11px";
+  hintRow.style.fontWeight = "700";
+  hintRow.style.color = "#2563eb";
+  hintRow.textContent = "Click to open analysis";
+
+  wrapper.appendChild(fileRow);
+  wrapper.appendChild(timeRow);
+  wrapper.appendChild(altRow);
+  wrapper.appendChild(hintRow);
+
+  return wrapper;
 }
 
 function getDisplayName(device) {
@@ -993,126 +1329,90 @@ export default function HeatMapMapView({
     }
 
     let detached = false;
+    let closeTimerId = null;
+
+    const clearCloseTimer = () => {
+      if (closeTimerId) {
+        window.clearTimeout(closeTimerId);
+        closeTimerId = null;
+      }
+    };
 
     const closeCapturePopup = () => {
+      clearCloseTimer();
       capturePopupPinnedRef.current = false;
       safeRemovePopup(popup);
     };
 
-    const handleEnter = () => {
+    const scheduleCloseCapturePopup = () => {
+      clearCloseTimer();
+
+      closeTimerId = window.setTimeout(() => {
+        if (detached) return;
+        closeCapturePopup();
+        safeSetCursor(map, "");
+      }, 180);
+    };
+
+    const openCaptureModal = (capture) => {
+      if (!capture) return;
+
+      closeCapturePopup();
+      safeRemovePopup(heatPopup);
+      setCapturePreview(capture);
+    };
+
+    const showCapturePreview = (feature, lngLat) => {
+      const capture = buildCapturePayloadFromFeature(
+        feature,
+        selectedMission?.missionId,
+      );
+
+      if (!capture) return;
+
+      clearCloseTimer();
+      capturePopupPinnedRef.current = true;
+      safeRemovePopup(heatPopup);
+
+      try {
+        popup
+          .setLngLat(lngLat)
+          .setDOMContent(
+            buildCapturePreviewPopup({
+              capture,
+              onOpen: () => openCaptureModal(capture),
+              onMouseEnter: clearCloseTimer,
+              onMouseLeave: scheduleCloseCapturePopup,
+            }),
+          )
+          .addTo(map);
+      } catch {}
+    };
+
+    const handleEnter = (e) => {
       if (detached) return;
+
       safeSetCursor(map, "pointer");
+
+      const feature = e.features?.[0];
+      if (!feature) return;
+
+      showCapturePreview(feature, e.lngLat);
+    };
+
+    const handleMove = (e) => {
+      if (detached) return;
+
+      const feature = e.features?.[0];
+      if (!feature) return;
+
+      showCapturePreview(feature, e.lngLat);
     };
 
     const handleLeave = () => {
       if (detached) return;
-      if (capturePopupPinnedRef.current) return;
-      safeSetCursor(map, "");
+      scheduleCloseCapturePopup();
     };
-
-    function buildPopupContent(props) {
-      const wrapper = document.createElement("div");
-      wrapper.style.minWidth = "220px";
-      wrapper.style.maxWidth = "240px";
-
-      const header = document.createElement("div");
-      header.style.display = "flex";
-      header.style.alignItems = "center";
-      header.style.justifyContent = "space-between";
-      header.style.gap = "8px";
-      header.style.marginBottom = "8px";
-
-      const titleRow = document.createElement("div");
-      titleRow.style.display = "flex";
-      titleRow.style.alignItems = "center";
-      titleRow.style.gap = "6px";
-      titleRow.style.fontSize = "13px";
-      titleRow.style.fontWeight = "700";
-      titleRow.innerHTML = `<span>Capture point</span>`;
-
-      header.appendChild(titleRow);
-      wrapper.appendChild(header);
-
-      const imageId = props.id;
-      const filename = props.filename || "image.jpg";
-      const altM = props.alt_m;
-      const tsEpoch = props.ts_epoch;
-
-      const imageUrl = buildCaptureImageUrl(
-        selectedMission?.missionId,
-        imageId,
-      );
-
-      const dateText = tsEpoch
-        ? new Date(Number(tsEpoch) * 1000).toLocaleString("ro-RO", {
-            year: "numeric",
-            month: "2-digit",
-            day: "2-digit",
-            hour: "2-digit",
-            minute: "2-digit",
-            second: "2-digit",
-          })
-        : "Unknown";
-
-      if (imageUrl) {
-        const imageWrap = document.createElement("div");
-        imageWrap.style.position = "relative";
-        imageWrap.style.width = "100%";
-        imageWrap.style.height = "120px";
-        imageWrap.style.marginBottom = "10px";
-        imageWrap.style.borderRadius = "10px";
-        imageWrap.style.overflow = "hidden";
-        imageWrap.style.border = "1px solid rgba(148,163,184,0.25)";
-        imageWrap.style.cursor = "pointer";
-        imageWrap.onclick = () => {
-          setCapturePreview({
-            imageUrl,
-            filename,
-            tsEpoch,
-            altM,
-          });
-        };
-
-        const img = document.createElement("img");
-        img.src = imageUrl;
-        img.alt = filename;
-        img.style.width = "100%";
-        img.style.height = "100%";
-        img.style.objectFit = "cover";
-        img.loading = "lazy";
-        img.onerror = () => {
-          imageWrap.style.display = "none";
-        };
-
-        imageWrap.appendChild(img);
-        wrapper.appendChild(imageWrap);
-      }
-
-      const fileRow = document.createElement("div");
-      fileRow.style.fontSize = "12px";
-      fileRow.style.opacity = ".88";
-      fileRow.style.marginBottom = "4px";
-      fileRow.innerHTML = `<strong>File:</strong> ${filename}`;
-
-      const timeRow = document.createElement("div");
-      timeRow.style.fontSize = "12px";
-      timeRow.style.opacity = ".88";
-      timeRow.style.marginBottom = "4px";
-      timeRow.innerHTML = `<strong>Captured:</strong> ${dateText}`;
-
-      const altRow = document.createElement("div");
-      altRow.style.fontSize = "12px";
-      altRow.style.opacity = ".88";
-      altRow.innerHTML = `<strong>Altitude:</strong> ${
-        altM != null ? `${Number(altM).toFixed(1)} m` : "—"
-      }`;
-
-      wrapper.appendChild(fileRow);
-      wrapper.appendChild(timeRow);
-      wrapper.appendChild(altRow);
-
-      return wrapper;
-    }
 
     const handleLayerClick = (e) => {
       if (detached) return;
@@ -1120,15 +1420,12 @@ export default function HeatMapMapView({
       const feature = e.features?.[0];
       if (!feature) return;
 
-      capturePopupPinnedRef.current = true;
-      safeRemovePopup(heatPopup);
+      const capture = buildCapturePayloadFromFeature(
+        feature,
+        selectedMission?.missionId,
+      );
 
-      try {
-        popup
-          .setLngLat(e.lngLat)
-          .setDOMContent(buildPopupContent(feature.properties || {}))
-          .addTo(map);
-      } catch {}
+      openCaptureModal(capture);
     };
 
     const handleMapClick = (e) => {
@@ -1152,6 +1449,7 @@ export default function HeatMapMapView({
 
       try {
         map.on("mouseenter", IMAGE_POINTS_LAYER_ID, handleEnter);
+        map.on("mousemove", IMAGE_POINTS_LAYER_ID, handleMove);
         map.on("mouseleave", IMAGE_POINTS_LAYER_ID, handleLeave);
         map.on("click", IMAGE_POINTS_LAYER_ID, handleLayerClick);
         map.on("click", handleMapClick);
@@ -1168,10 +1466,12 @@ export default function HeatMapMapView({
 
     return () => {
       detached = true;
+      clearCloseTimer();
 
       try {
         if (hasLayerSafe(map, IMAGE_POINTS_LAYER_ID)) {
           map.off("mouseenter", IMAGE_POINTS_LAYER_ID, handleEnter);
+          map.off("mousemove", IMAGE_POINTS_LAYER_ID, handleMove);
           map.off("mouseleave", IMAGE_POINTS_LAYER_ID, handleLeave);
           map.off("click", IMAGE_POINTS_LAYER_ID, handleLayerClick);
         }
@@ -1558,60 +1858,10 @@ export default function HeatMapMapView({
         </div>
       ) : null}
 
-      {capturePreview ? (
-        <div
-          className="absolute inset-0 z-30 flex items-center justify-center bg-black/60 p-4"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) {
-              setCapturePreview(null);
-            }
-          }}
-        >
-          <div className="w-full max-w-5xl overflow-hidden rounded-3xl border border-base-300 bg-base-100 shadow-2xl">
-            <div className="flex items-start justify-between gap-4 border-b border-base-300 px-5 py-4">
-              <div className="min-w-0">
-                <div className="truncate text-base font-semibold text-base-content">
-                  {capturePreview.filename}
-                </div>
-                <div className="mt-1 text-sm text-base-content/60">
-                  {capturePreview.tsEpoch
-                    ? new Date(
-                        Number(capturePreview.tsEpoch) * 1000,
-                      ).toLocaleString("ro-RO", {
-                        year: "numeric",
-                        month: "2-digit",
-                        day: "2-digit",
-                        hour: "2-digit",
-                        minute: "2-digit",
-                        second: "2-digit",
-                      })
-                    : "Unknown time"}
-                  {" • "}
-                  {capturePreview.altM != null
-                    ? `${Number(capturePreview.altM).toFixed(1)} m`
-                    : "—"}
-                </div>
-              </div>
-
-              <button
-                type="button"
-                className="btn btn-sm btn-circle btn-ghost"
-                onClick={() => setCapturePreview(null)}
-              >
-                <FiX />
-              </button>
-            </div>
-
-            <div className="flex max-h-[80vh] items-center justify-center bg-black p-4">
-              <img
-                src={capturePreview.imageUrl}
-                alt={capturePreview.filename}
-                className="max-h-[75vh] w-auto max-w-full rounded-2xl object-contain"
-              />
-            </div>
-          </div>
-        </div>
-      ) : null}
+      <CaptureAnalysisModal
+        capture={capturePreview}
+        onClose={() => setCapturePreview(null)}
+      />
 
       {!selectedLocationPin && !selectedMission ? (
         <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 p-4">

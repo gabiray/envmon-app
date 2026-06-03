@@ -140,7 +140,7 @@ def db_mission_telemetry(mission_id: str):
 @missions_db_bp.get("/db/missions/<mission_id>/images")
 def db_mission_images(mission_id: str):
     with SessionLocal() as db:
-        rows = db.execute(
+        images = db.execute(
             select(
                 MissionImage.id,
                 MissionImage.ts_epoch,
@@ -153,20 +153,66 @@ def db_mission_images(mission_id: str):
             .order_by(MissionImage.ts_epoch.asc(), MissionImage.id.asc())
         ).all()
 
-        return jsonify(
-            [
-                {
-                    "id": r[0],
-                    "ts_epoch": r[1],
-                    "lat": r[2],
-                    "lon": r[3],
-                    "alt_m": r[4],
-                    "filename": r[5],
-                }
-                for r in rows
-            ]
-        )
+        result = []
 
+        for img in images:
+            image_id = img[0]
+            image_ts = img[1]
+
+            nearest_telemetry = None
+            if image_ts is not None:
+                nearest_telemetry = db.execute(
+                    select(
+                        TelemetryPoint.ts_epoch,
+                        TelemetryPoint.lat,
+                        TelemetryPoint.lon,
+                        TelemetryPoint.alt_m,
+                        TelemetryPoint.fix_quality,
+                        TelemetryPoint.satellites,
+                        TelemetryPoint.hdop,
+                        TelemetryPoint.temp_c,
+                        TelemetryPoint.hum_pct,
+                        TelemetryPoint.press_hpa,
+                        TelemetryPoint.gas_ohms,
+                    )
+                    .where(TelemetryPoint.mission_id == mission_id)
+                    .order_by(func.abs(TelemetryPoint.ts_epoch - image_ts).asc())
+                    .limit(1)
+                ).first()
+
+            item = {
+                "id": image_id,
+                "ts_epoch": image_ts,
+                "lat": img[2],
+                "lon": img[3],
+                "alt_m": img[4],
+                "filename": img[5],
+                "telemetry": None,
+            }
+
+            if nearest_telemetry:
+                telemetry_ts = nearest_telemetry[0]
+                item["telemetry"] = {
+                    "ts_epoch": telemetry_ts,
+                    "dt_s": abs(float(telemetry_ts) - float(image_ts))
+                    if telemetry_ts is not None and image_ts is not None
+                    else None,
+                    "lat": nearest_telemetry[1],
+                    "lon": nearest_telemetry[2],
+                    "alt_m": nearest_telemetry[3],
+                    "fix_quality": nearest_telemetry[4],
+                    "satellites": nearest_telemetry[5],
+                    "hdop": nearest_telemetry[6],
+                    "temp_c": nearest_telemetry[7],
+                    "hum_pct": nearest_telemetry[8],
+                    "press_hpa": nearest_telemetry[9],
+                    "gas_ohms": nearest_telemetry[10],
+                }
+
+            result.append(item)
+
+        return jsonify(result)
+    
 
 @missions_db_bp.get("/db/missions/<mission_id>/images/<int:image_id>/file")
 def db_mission_image_file(mission_id: str, image_id: int):
