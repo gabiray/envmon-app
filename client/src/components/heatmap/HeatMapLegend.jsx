@@ -97,7 +97,7 @@ export default function HeatMapLegend({
         title="Open legend"
         aria-label="Open map legend"
       >
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/12 text-primary">
+        <div className="flex h-7.5 w-7.5 shrink-0 items-center justify-center rounded-lg bg-primary/12 text-primary">
           <FiLayers className="text-base" />
         </div>
 

@@ -1683,10 +1683,6 @@ export default function HeatMapMapView({
     const missionId = selectedMission?.missionId || null;
     if (!missionId) return;
 
-    const fitKey = ["mission", missionId, viewKey, mapVersion].join(":");
-
-    if (lastAutoFitKeyRef.current === fitKey) return;
-
     const hasVisibleLayer = showTrack || showHeatmap || showCaptures;
 
     const hasTrackBounds =
@@ -1709,30 +1705,61 @@ export default function HeatMapMapView({
     }
 
     let coords = [];
+    let sourceKey = "start";
 
     if (hasTrackBounds) {
       coords = trackBounds;
+      sourceKey = `track:${trackBounds.length}`;
     } else if (hasHeatBounds) {
       coords = heatBounds;
+      sourceKey = `heat:${JSON.stringify(heatBounds)}`;
     } else if (hasCaptureBounds) {
       coords = captureBounds;
+      sourceKey = `captures:${captureBounds.length}`;
     } else {
       const lat = selectedMission.start?.lat;
       const lon = selectedMission.start?.lon;
 
       if (lat != null && lon != null) {
         coords = [[Number(lon), Number(lat)]];
+        sourceKey = `start:${Number(lon)}:${Number(lat)}`;
       }
     }
 
     if (!coords.length) return;
 
+    const fitKey = [
+      "mission",
+      missionId,
+      viewKey,
+      mapVersion,
+      showTrack ? "track-on" : "track-off",
+      showHeatmap ? "heat-on" : "heat-off",
+      showCaptures ? "captures-on" : "captures-off",
+      sourceKey,
+    ].join(":");
+
+    if (lastAutoFitKeyRef.current === fitKey) return;
+
     lastAutoFitKeyRef.current = fitKey;
+
+    focusLocationPin(
+      map,
+      {
+        lat: Number(coords[0][1]),
+        lon: Number(coords[0][0]),
+      },
+      viewMode,
+      globePerspective,
+      mapPerspective,
+    );
 
     fitCoords(map, coords, viewMode, globePerspective, mapPerspective);
   }, [
     mapVersion,
+    localFocusSelectionKey,
     selectedLocationPin,
+    selectedMission,
     selectedMission?.missionId,
     selectedMission?.start?.lat,
     selectedMission?.start?.lon,
@@ -1746,7 +1773,6 @@ export default function HeatMapMapView({
     viewMode,
     globePerspective,
     mapPerspective,
-    localFocusSelectionKey,
   ]);
 
   function markManualViewChange() {

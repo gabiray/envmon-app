@@ -288,7 +288,8 @@ export default function HeatMapSidebar({
 
                   <div className="mt-1 text-sm text-base-content/60">
                     {selectedMission.deviceName} •{" "}
-                    {selectedMission.profileLabel || selectedMission.profileType}
+                    {selectedMission.profileLabel ||
+                      selectedMission.profileType}
                   </div>
                 </div>
 
@@ -323,12 +324,14 @@ export default function HeatMapSidebar({
                     onClick={onToggleHeatmap}
                   />
 
-                  <LayerToggleButton
-                    active={showCaptures}
-                    icon={FiCamera}
-                    label="View captures"
-                    onClick={onToggleCaptures}
-                  />
+                  {selectedMission?.hasImages ? (
+                    <LayerToggleButton
+                      active={showCaptures}
+                      icon={FiCamera}
+                      label="View captures"
+                      onClick={onToggleCaptures}
+                    />
+                  ) : null}
                 </div>
 
                 {showHeatmap ? (

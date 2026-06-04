@@ -210,6 +210,13 @@ export default function useHeatMapLayers({
   const missionId = selectedMission?.missionId || null;
 
   useEffect(() => {
+    setErrorText("");
+    setTrackPoints([]);
+    setHeatGrid(null);
+    setImagePoints([]);
+  }, [missionId]);
+
+  useEffect(() => {
     let cancelled = false;
 
     async function loadLayerData() {
@@ -226,21 +233,31 @@ export default function useHeatMapLayers({
       setErrorText("");
 
       try {
-        const [trackResult, heatmapResult, imagesResult] = await Promise.all([
+        const [trackResult, heatmapResult] = await Promise.all([
           fetchMissionTrack(missionId),
           fetchHeatGrid({
             mission_id: missionId,
             metric: heatmapMetric,
             cell_m: heatmapCellM,
           }),
-          fetchMissionImages(missionId),
         ]);
+
+        let imagesResult = [];
+
+        if (selectedMission?.hasImages) {
+          try {
+            const result = await fetchMissionImages(missionId);
+            imagesResult = Array.isArray(result) ? result : [];
+          } catch {
+            imagesResult = [];
+          }
+        }
 
         if (cancelled) return;
 
         setTrackPoints(Array.isArray(trackResult) ? trackResult : []);
         setHeatGrid(heatmapResult || null);
-        setImagePoints(Array.isArray(imagesResult) ? imagesResult : []);
+        setImagePoints(imagesResult);
       } catch (error) {
         if (cancelled) return;
 
@@ -264,7 +281,7 @@ export default function useHeatMapLayers({
     return () => {
       cancelled = true;
     };
-  }, [missionId, heatmapMetric, heatmapCellM]);
+  }, [missionId, heatmapMetric, heatmapCellM, selectedMission?.hasImages]);
 
   const trackGeoJson = useMemo(() => {
     return buildTrackGeoJson(trackPoints);

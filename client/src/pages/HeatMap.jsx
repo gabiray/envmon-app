@@ -17,11 +17,19 @@ const EMPTY_LAYERS = {
   captures: false,
 };
 
-const DEFAULT_MISSION_LAYERS = {
-  track: true,
-  heatmap: true,
-  captures: true,
-};
+function missionHasMapLocation(mission) {
+  return mission?.start?.lat != null && mission?.start?.lon != null;
+}
+
+function getDefaultMissionLayers(mission) {
+  const hasMapLocation = missionHasMapLocation(mission);
+
+  return {
+    track: hasMapLocation,
+    heatmap: hasMapLocation,
+    captures: hasMapLocation && Boolean(mission?.hasImages),
+  };
+}
 
 export default function HeatMap() {
   const {
@@ -49,6 +57,7 @@ export default function HeatMap() {
   const [expandedMissionIds, setExpandedMissionIds] = useState([]);
 
   const [returnLocationKey, setReturnLocationKey] = useState(null);
+  const [pendingLayerMissionId, setPendingLayerMissionId] = useState(null);
   const suppressDeepLinkRef = useRef(false);
 
   const [visibleLayers, setVisibleLayers] = useState(EMPTY_LAYERS);
@@ -78,8 +87,32 @@ export default function HeatMap() {
     if (!missionMap.has(selectedMissionId)) {
       setSelectedMissionId(null);
       setVisibleLayers(EMPTY_LAYERS);
+      setPendingLayerMissionId(null);
     }
   }, [selectedMissionId, missionMap]);
+
+  useEffect(() => {
+    if (!pendingLayerMissionId) return;
+    if (!selectedMission) return;
+    if (selectedMission.missionId !== pendingLayerMissionId) return;
+
+    setVisibleLayers(getDefaultMissionLayers(selectedMission));
+    setPendingLayerMissionId(null);
+  }, [pendingLayerMissionId, selectedMission]);
+
+  const effectiveVisibleLayers = useMemo(() => {
+    const hasMapLocation = missionHasMapLocation(selectedMission);
+
+    return {
+      track: Boolean(visibleLayers.track && hasMapLocation),
+      heatmap: Boolean(visibleLayers.heatmap && hasMapLocation),
+      captures: Boolean(
+        visibleLayers.captures &&
+          hasMapLocation &&
+          selectedMission?.hasImages,
+      ),
+    };
+  }, [visibleLayers, selectedMission]);
 
   const {
     loading: layerLoading,
@@ -96,12 +129,14 @@ export default function HeatMap() {
   } = useHeatMapLayers({
     selectedMission,
     layerMode:
-      visibleLayers.track || visibleLayers.heatmap || visibleLayers.captures
+      effectiveVisibleLayers.track ||
+      effectiveVisibleLayers.heatmap ||
+      effectiveVisibleLayers.captures
         ? "mixed"
         : "none",
-    showTrack: visibleLayers.track,
-    showHeatmap: visibleLayers.heatmap,
-    showCaptures: visibleLayers.captures,
+    showTrack: effectiveVisibleLayers.track,
+    showHeatmap: effectiveVisibleLayers.heatmap,
+    showCaptures: effectiveVisibleLayers.captures,
     heatmapMetric,
     heatmapCellM,
   });
@@ -154,7 +189,8 @@ export default function HeatMap() {
     setSelectedMissionId(requestedMissionId);
     setSelectedLocationKey(null);
     setReturnLocationKey(null);
-    setVisibleLayers(DEFAULT_MISSION_LAYERS);
+    setVisibleLayers(EMPTY_LAYERS);
+    setPendingLayerMissionId(requestedMissionId);
 
     setExpandedMissionIds((prev) =>
       prev.includes(requestedMissionId) ? prev : [...prev, requestedMissionId],
@@ -178,6 +214,17 @@ export default function HeatMap() {
   function toggleLayer(layerName) {
     if (!selectedMission) return;
 
+    if (
+      (layerName === "track" || layerName === "heatmap") &&
+      !missionHasMapLocation(selectedMission)
+    ) {
+      return;
+    }
+
+    if (layerName === "captures" && !selectedMission.hasImages) {
+      return;
+    }
+
     setVisibleLayers((prev) => ({
       ...prev,
       [layerName]: !prev[layerName],
@@ -190,6 +237,7 @@ export default function HeatMap() {
     setSelectedLocationKey(null);
     setExpandedMissionIds([]);
     setVisibleLayers(EMPTY_LAYERS);
+    setPendingLayerMissionId(null);
 
     if (activeDevice) {
       onProfileChange(nextType);
@@ -213,11 +261,12 @@ export default function HeatMap() {
     setSelectedLocationKey(locationKey);
     setSelectedMissionId(null);
     setVisibleLayers(EMPTY_LAYERS);
+    setPendingLayerMissionId(null);
     clearMissionSearchParams();
   }
 
   async function handleSelectMission(mission) {
-    if (!mission) return;
+    if (!mission?.missionId) return;
 
     if (selectedLocationKey) {
       setReturnLocationKey(selectedLocationKey);
@@ -227,7 +276,8 @@ export default function HeatMap() {
 
     setSelectedMissionId(mission.missionId);
     setSelectedLocationKey(null);
-    setVisibleLayers(DEFAULT_MISSION_LAYERS);
+    setVisibleLayers(EMPTY_LAYERS);
+    setPendingLayerMissionId(mission.missionId);
 
     setExpandedMissionIds((prev) =>
       prev.includes(mission.missionId) ? prev : [...prev, mission.missionId],
@@ -251,6 +301,7 @@ export default function HeatMap() {
 
     setSelectedMissionId(null);
     setVisibleLayers(EMPTY_LAYERS);
+    setPendingLayerMissionId(null);
 
     setSelectedLocationKey(locationToReturn || null);
     setReturnLocationKey(null);
@@ -289,9 +340,9 @@ export default function HeatMap() {
             onToggleMissionExpand={handleToggleMissionExpand}
             onSelectMission={handleSelectMission}
             onBackToExplorer={handleBackToExplorer}
-            showTrack={visibleLayers.track}
-            showHeatmap={visibleLayers.heatmap}
-            showCaptures={visibleLayers.captures}
+            showTrack={effectiveVisibleLayers.track}
+            showHeatmap={effectiveVisibleLayers.heatmap}
+            showCaptures={effectiveVisibleLayers.captures}
             heatmapMetric={heatmapMetric}
             heatmapCellM={heatmapCellM}
             onToggleTrack={() => toggleLayer("track")}
@@ -316,9 +367,9 @@ export default function HeatMap() {
             onSelectLocationPin={handleSelectLocationPin}
             onSelectMission={handleSelectMission}
             onCloseLocationPopover={handleCloseLocationPopover}
-            showTrack={visibleLayers.track}
-            showHeatmap={visibleLayers.heatmap}
-            showCaptures={visibleLayers.captures}
+            showTrack={effectiveVisibleLayers.track}
+            showHeatmap={effectiveVisibleLayers.heatmap}
+            showCaptures={effectiveVisibleLayers.captures}
             heatmapMetric={heatmapMetric}
             heatGrid={heatGrid}
             imagePoints={imagePoints}
