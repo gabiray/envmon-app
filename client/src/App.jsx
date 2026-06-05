@@ -9,6 +9,7 @@ import Analytics from "./pages/Analytics";
 import NotFound from "./pages/NotFound";
 import MissionControl from "./pages/MissionControl";
 import DashboardCar from "./pages/DashboardCar";
+import Settings from "./pages/Settings";
 
 export default function App() {
   return (
@@ -22,6 +23,7 @@ export default function App() {
         <Route path="/analytics" element={<Analytics />} />
         <Route path="/mission-control" element={<MissionControl />} />
         <Route path="/dashboard-car" element={<DashboardCar />} />
+        <Route path="/settings" element={<Settings />} />
       </Route>
 
       {/* Fallback */}

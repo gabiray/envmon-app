@@ -1,6 +1,6 @@
 import React, { useMemo } from "react";
 import { NavLink } from "react-router-dom";
-import { FiGrid, FiMap, FiList, FiBarChart2, FiRadio } from "react-icons/fi";
+import { FiGrid, FiMap, FiList, FiBarChart2, FiRadio, FiSettings } from "react-icons/fi";
 import droneLogo from "../../assets/drone.png";
 import styles from "../AppShell.module.css";
 
@@ -21,6 +21,7 @@ export default function Sidebar({ selectedProfileType = "drone" }) {
       { to: "/heatmap", label: "HeatMap", Icon: FiMap },
       { to: "/missions", label: "Missions", Icon: FiList },
       { to: "/analytics", label: "Analytics", Icon: FiBarChart2 },
+      { to: "/settings", label: "Settings", Icon: FiSettings },
     ],
     [selectedProfileType],
   );

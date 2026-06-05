@@ -19,6 +19,7 @@ const ROUTE_META = [
   { path: "/heatmap", title: "HeatMap" },
   { path: "/missions", title: "Missions" },
   { path: "/analytics", title: "Analytics" },
+  { path: "/settings", title: "Settings" },
 ];
 
 const FALLBACK_PROFILES = [
