@@ -93,4 +93,19 @@ class MissionsRepo:
             pass
 
         return True
+    
+    def delete_by_device(self, device_uuid: str) -> int:
+        with SessionLocal() as db:
+            rows = db.execute(
+                select(Mission.mission_id)
+                .where(Mission.device_uuid == device_uuid)
+            ).scalars().all()
+
+        deleted_count = 0
+
+        for mission_id in rows:
+            if self.delete_mission(mission_id):
+                deleted_count += 1
+
+        return deleted_count
         

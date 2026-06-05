@@ -4,8 +4,10 @@ import requests
 from collections import Counter
 
 from app.services.discovery import scan_network, default_cidr
-from app.services.device_store import load_store, upsert_devices, set_active
+from app.services.device_store import load_store, upsert_devices, set_active, remove_device, get_base_url_for
 from app.repositories.devices_repo import DevicesRepo
+from app.repositories.missions_repo import MissionsRepo
+from app.services.device_client import DeviceClient, DeviceIdentityMismatch, DeviceUnreachable
 
 devices_bp = Blueprint("devices", __name__)
 
@@ -480,4 +482,108 @@ def configure_device(device_uuid: str):
         return jsonify({"ok": True, "device": rec})
     except KeyError:
         return jsonify({"ok": False, "error": "device not found (scan first)"}), 404
+    
+
+@devices_bp.delete("/devices/<device_uuid>/db-missions")
+def delete_device_db_missions(device_uuid: str):
+    repo = DevicesRepo()
+    rec = repo.get_one(device_uuid)
+
+    if not rec:
+        return jsonify({"ok": False, "error": "device not found"}), 404
+
+    deleted_db_missions = MissionsRepo().delete_by_device(device_uuid)
+
+    return jsonify({
+        "ok": True,
+        "device_uuid": device_uuid,
+        "deleted_db_missions": deleted_db_missions,
+    })
+
+
+@devices_bp.delete("/devices/<device_uuid>")
+def delete_device(device_uuid: str):
+    payload = request.get_json(silent=True) or {}
+
+    delete_db_missions = bool(payload.get("delete_db_missions", False))
+    delete_device_missions = bool(payload.get("delete_device_missions", False))
+
+    repo = DevicesRepo()
+    rec = repo.get_one(device_uuid)
+
+    if not rec:
+        return jsonify({"ok": False, "error": "device not found"}), 404
+
+    deleted_device_missions = None
+
+    if delete_device_missions:
+        base_url = get_base_url_for(device_uuid)
+
+        if not base_url:
+            return jsonify({
+                "ok": False,
+                "error": "Cannot delete missions from physical device because base_url is missing",
+            }), 400
+
+        try:
+            dc = DeviceClient(base_url=base_url, expected_uuid=device_uuid)
+            r = dc.delete("/missions", timeout=60)
+
+            try:
+                device_payload = r.json()
+            except Exception:
+                device_payload = {"ok": False, "error": "Invalid device response"}
+
+            if r.status_code >= 400 or not device_payload.get("ok", False):
+                return jsonify({
+                    "ok": False,
+                    "error": "Physical device mission deletion failed",
+                    "device_response": device_payload,
+                }), r.status_code
+
+            deleted_device_missions = device_payload.get("deleted_count", 0)
+
+        except DeviceIdentityMismatch as e:
+            return jsonify(e.to_dict()), 409
+        except DeviceUnreachable as e:
+            return jsonify({
+                "ok": False,
+                "error": str(e),
+                "connection_state": "offline",
+                "base_url": e.base_url,
+            }), 502
+        except Exception as e:
+            return jsonify({
+                "ok": False,
+                "error": f"Physical device mission deletion failed: {e}",
+            }), 502
+
+    deleted_db_missions = 0
+    deleted_db_device = False
+    reset_db_configuration = False
+
+    if delete_db_missions:
+        deleted_db_missions = MissionsRepo().delete_by_device(device_uuid)
+        deleted_db_device = repo.delete_record(device_uuid)
+    else:
+        remaining_missions = repo.count_missions(device_uuid)
+
+        if remaining_missions == 0:
+            deleted_db_device = repo.delete_record(device_uuid)
+        else:
+            reset_db_configuration = repo.reset_configuration(device_uuid)
+
+    store = remove_device(device_uuid)
+
+    return jsonify({
+        "ok": True,
+        "device_uuid": device_uuid,
+        "removed_from_store": True,
+        "deleted_db_missions": deleted_db_missions,
+        "deleted_db_device": deleted_db_device,
+        "reset_db_configuration": reset_db_configuration,
+        "deleted_device_missions": deleted_device_missions,
+        "active_device_uuid": store.get("active_device_uuid"),
+        "devices": store.get("devices", []),
+    })
     

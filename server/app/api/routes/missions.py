@@ -173,3 +173,26 @@ def delete_device_mission(mission_id: str):
     except Exception as e:
         return jsonify({"ok": False, "error": f"Device unreachable: {e}"}), 502
     
+
+@missions_bp.delete("/device/missions")
+def delete_all_device_missions():
+    try:
+        dc = DeviceClient()
+        r = dc.delete("/missions", timeout=60)
+        return jsonify(r.json()), r.status_code
+    except DeviceIdentityMismatch as e:
+        return jsonify(e.to_dict()), 409
+    except DeviceNotSelected as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    except DeviceUnreachable as e:
+        return jsonify({
+            "ok": False,
+            "error": str(e),
+            "connection_state": "offline",
+        }), 502
+    except Exception as e:
+        return jsonify({
+            "ok": False,
+            "error": f"Device unreachable: {e}",
+        }), 502
+        

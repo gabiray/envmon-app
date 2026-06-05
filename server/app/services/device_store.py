@@ -135,3 +135,24 @@ def get_base_url_for(device_uuid: str) -> str | None:
         if d.get("device_uuid") == device_uuid:
             return d.get("base_url")
     return None
+
+
+def remove_device(device_uuid: str) -> dict:
+    store = load_store()
+
+    before = len(store.get("devices", []))
+
+    store["devices"] = [
+        d for d in store.get("devices", [])
+        if d.get("device_uuid") != device_uuid
+    ]
+
+    if store.get("active_device_uuid") == device_uuid:
+        store["active_device_uuid"] = None
+
+    changed = len(store.get("devices", [])) != before
+
+    if changed:
+        save_store(store)
+
+    return store

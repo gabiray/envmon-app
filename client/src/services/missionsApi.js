@@ -134,6 +134,11 @@ export async function deleteDeviceMission(mission_id) {
   return data;
 }
 
+export async function deleteAllDeviceMissions() {
+  const { data } = await api.delete("/device/missions");
+  return data;
+}
+
 export async function downloadDeviceMissionZip(mission_id) {
   const response = await api.get(`/missions/${mission_id}/export`, {
     responseType: "blob",

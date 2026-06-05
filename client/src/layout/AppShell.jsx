@@ -158,15 +158,18 @@ export default function AppShell() {
     }
   }
 
-  const handleDeviceConnected = useCallback(async (deviceId) => {
-    if (!deviceId || deviceId === "none") return;
+  const handleDeviceConnected = useCallback(
+    async (deviceId) => {
+      if (!deviceId || deviceId === "none") return;
 
-    try {
-      await refresh();
-    } catch {
-      // Runtime polling should not surface duplicate errors beside page-level errors.
-    }
-  }, [refresh]);
+      try {
+        await refresh();
+      } catch {
+        // Runtime polling should not surface duplicate errors beside page-level errors.
+      }
+    },
+    [refresh],
+  );
 
   async function handleScan() {
     setIsScanning(true);
@@ -262,6 +265,8 @@ export default function AppShell() {
                 selectedProfileType,
                 profiles,
                 devicesRaw,
+                refreshDevices: refresh,
+                onScan: handleScan,
                 onDeviceConnected: handleDeviceConnected,
                 onDeviceChange: handleDeviceChange,
                 onProfileChange: handleProfileChange,

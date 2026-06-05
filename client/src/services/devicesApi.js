@@ -36,3 +36,29 @@ export async function configureDevice(device_uuid, { nickname, profile_type, pro
   });
   return data;
 }
+
+export async function setDeviceNickname(device_uuid, nickname) {
+  const { data } = await api.post(`/devices/${device_uuid}/nickname`, {
+    nickname,
+  });
+  return data;
+}
+
+export async function deleteDevice(
+  device_uuid,
+  { delete_db_missions = false, delete_device_missions = false } = {},
+) {
+  const { data } = await api.delete(`/devices/${device_uuid}`, {
+    data: {
+      delete_db_missions,
+      delete_device_missions,
+    },
+  });
+
+  return data;
+}
+
+export async function deleteDeviceDbMissions(device_uuid) {
+  const { data } = await api.delete(`/devices/${device_uuid}/db-missions`);
+  return data;
+}
