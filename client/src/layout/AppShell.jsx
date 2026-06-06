@@ -13,6 +13,7 @@ import {
 } from "../services/devicesApi";
 
 const ROUTE_META = [
+  { path: "/dashboard-static", title: "Dashboard" },
   { path: "/dashboard-car", title: "Dashboard" },
   { path: "/dashboard", title: "Dashboard" },
   { path: "/mission-control", title: "Mission Control" },

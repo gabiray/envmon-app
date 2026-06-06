@@ -105,23 +105,6 @@ class DevicesRepo:
             "is_configured": is_configured,
             "needs_setup": not is_configured,
         }
-        
-    def delete_record(self, device_uuid: str) -> bool:
-        with SessionLocal() as db:
-            d = db.get(Device, device_uuid)
-
-            if not d:
-                return False
-
-            db.execute(
-                delete(StartPoint)
-                .where(StartPoint.device_uuid == device_uuid)
-            )
-
-            db.delete(d)
-            db.commit()
-
-            return True
 
     def count_missions(self, device_uuid: str) -> int:
         with SessionLocal() as db:

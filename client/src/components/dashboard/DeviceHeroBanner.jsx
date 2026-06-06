@@ -137,7 +137,7 @@ export default function DeviceHeroBanner({
         <div className="flex items-start justify-between gap-4">
           {/* LEFT */}
           <div className="min-w-0 max-w-3xl">
-            <div className="text-xs sm:text-sm opacity-75">Air profile</div>
+            <div className="text-xs sm:text-sm opacity-75">Air Profile</div>
 
             <div className="mt-1 truncate text-2xl font-semibold leading-tight sm:text-3xl">
               {nickname}

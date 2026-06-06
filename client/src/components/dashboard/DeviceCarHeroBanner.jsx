@@ -138,7 +138,7 @@ export default function DeviceCarHeroBanner({
           {/* LEFT */}
           <div className="min-w-0 max-w-3xl">
             <div className="flex items-center gap-2 text-xs sm:text-sm opacity-80">
-              <span>Active device</span>
+              <span>Car Profile</span>
             </div>
 
             <div className="mt-1 truncate text-2xl font-semibold leading-tight sm:text-3xl">

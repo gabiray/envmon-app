@@ -8,6 +8,8 @@ function getDashboardRoute(profileType) {
   switch (profileType) {
     case "car":
       return "/dashboard-car";
+    case "static":
+      return "/dashboard-static";
     default:
       return "/dashboard";
   }
