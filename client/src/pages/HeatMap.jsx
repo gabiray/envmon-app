@@ -33,24 +33,22 @@ function getDefaultMissionLayers(mission) {
 
 export default function HeatMap() {
   const {
-    selectedDeviceId,
-    activeDevice,
-    selectedProfileType,
-    profiles,
-    devicesRaw,
-    onDeviceChange,
-    onProfileChange,
-  } = useOutletContext();
+    selectedDeviceId = "none",
+    activeDevice = null,
+    selectedProfileType = "drone",
+    profiles = [],
+    devicesRaw = [],
+  } = useOutletContext() || {};
 
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const requestedMissionId = (searchParams.get("missionId") || "").trim();
-  const requestedDeviceId = (searchParams.get("deviceId") || "").trim();
 
   const [profileType, setProfileType] = useState(
     selectedProfileType || "drone",
   );
+
   const [searchValue, setSearchValue] = useState("");
   const [selectedMissionId, setSelectedMissionId] = useState(null);
   const [selectedLocationKey, setSelectedLocationKey] = useState(null);
@@ -64,23 +62,36 @@ export default function HeatMap() {
   const [heatmapMetric, setHeatmapMetric] = useState("temp_c");
   const [heatmapCellM, setHeatmapCellM] = useState(15);
 
+  // Keep profile synced with the active device only when the page is opened
+  // normally. When opened with missionId, the mission decides the profile.
   useEffect(() => {
-    setProfileType(selectedProfileType || "drone");
-  }, [selectedProfileType, selectedDeviceId]);
+    if (requestedMissionId) return;
 
-  const { loading, errorText, activeDeviceMissions, missionMap, locationPins } =
-    useHeatMapData({
-      selectedDeviceId,
-      profileType,
-      searchValue,
-      devicesRaw,
-    });
+    setProfileType(selectedProfileType || "drone");
+  }, [selectedProfileType, requestedMissionId]);
+
+  const {
+    loading,
+    errorText,
+    activeDeviceMissions,
+    missionMap,
+    allMissionMap,
+    locationPins,
+  } = useHeatMapData({
+    selectedDeviceId,
+    profileType,
+    searchValue,
+    devicesRaw,
+  });
 
   const selectedMission = useMemo(() => {
     if (!selectedMissionId) return null;
+
     return missionMap.get(selectedMissionId) || null;
   }, [selectedMissionId, missionMap]);
 
+  // If the selected mission no longer belongs to the current profile/filter,
+  // clear the selected map layers.
   useEffect(() => {
     if (!selectedMissionId) return;
 
@@ -141,39 +152,9 @@ export default function HeatMap() {
     heatmapCellM,
   });
 
-  useEffect(() => {
-    if (!requestedMissionId) return;
-
-    if (
-      requestedDeviceId &&
-      requestedDeviceId !== "none" &&
-      requestedDeviceId !== selectedDeviceId
-    ) {
-      onDeviceChange(requestedDeviceId);
-      return;
-    }
-
-    if (!Array.isArray(devicesRaw) || devicesRaw.length === 0) return;
-
-    const missionOwner = devicesRaw.find((device) => {
-      const ids = device?.missions || [];
-      return Array.isArray(ids) && ids.includes(requestedMissionId);
-    });
-
-    if (
-      missionOwner?.device_uuid &&
-      missionOwner.device_uuid !== selectedDeviceId
-    ) {
-      onDeviceChange(missionOwner.device_uuid);
-    }
-  }, [
-    requestedMissionId,
-    requestedDeviceId,
-    devicesRaw,
-    selectedDeviceId,
-    onDeviceChange,
-  ]);
-
+  // Deep link behavior:
+  // missionId is the source of truth.
+  // deviceId from URL is ignored for selection because the device may be archived.
   useEffect(() => {
     if (!requestedMissionId) {
       suppressDeepLinkRef.current = false;
@@ -181,21 +162,40 @@ export default function HeatMap() {
     }
 
     if (suppressDeepLinkRef.current) return;
-
     if (loading) return;
-    if (requestedMissionId === selectedMissionId) return;
-    if (!missionMap.has(requestedMissionId)) return;
 
-    setSelectedMissionId(requestedMissionId);
+    const deepLinkedMission = allMissionMap.get(requestedMissionId);
+    if (!deepLinkedMission) return;
+
+    // If the mission belongs to another profile, switch local profile first.
+    if (
+      deepLinkedMission.profileType &&
+      deepLinkedMission.profileType !== profileType
+    ) {
+      setProfileType(deepLinkedMission.profileType);
+      return;
+    }
+
+    if (requestedMissionId === selectedMissionId) return;
+
+    setSelectedMissionId(deepLinkedMission.missionId);
     setSelectedLocationKey(null);
     setReturnLocationKey(null);
     setVisibleLayers(EMPTY_LAYERS);
-    setPendingLayerMissionId(requestedMissionId);
+    setPendingLayerMissionId(deepLinkedMission.missionId);
 
     setExpandedMissionIds((prev) =>
-      prev.includes(requestedMissionId) ? prev : [...prev, requestedMissionId],
+      prev.includes(deepLinkedMission.missionId)
+        ? prev
+        : [...prev, deepLinkedMission.missionId],
     );
-  }, [requestedMissionId, selectedMissionId, loading, missionMap]);
+  }, [
+    requestedMissionId,
+    selectedMissionId,
+    loading,
+    allMissionMap,
+    profileType,
+  ]);
 
   function clearMissionSearchParams() {
     suppressDeepLinkRef.current = true;
@@ -232,16 +232,17 @@ export default function HeatMap() {
   }
 
   function handleProfileSelect(nextType) {
+    // Local HeatMap filter only.
+    // Do not call onProfileChange here, because that would try to configure
+    // the active physical device. HeatMap must also work without active device.
     setProfileType(nextType);
+
     setSelectedMissionId(null);
     setSelectedLocationKey(null);
     setExpandedMissionIds([]);
     setVisibleLayers(EMPTY_LAYERS);
     setPendingLayerMissionId(null);
-
-    if (activeDevice) {
-      onProfileChange(nextType);
-    }
+    setReturnLocationKey(null);
 
     if (requestedMissionId) {
       clearMissionSearchParams();
@@ -262,10 +263,11 @@ export default function HeatMap() {
     setSelectedMissionId(null);
     setVisibleLayers(EMPTY_LAYERS);
     setPendingLayerMissionId(null);
+
     clearMissionSearchParams();
   }
 
-  async function handleSelectMission(mission) {
+  function handleSelectMission(mission) {
     if (!mission?.missionId) return;
 
     if (selectedLocationKey) {
@@ -283,6 +285,8 @@ export default function HeatMap() {
       prev.includes(mission.missionId) ? prev : [...prev, mission.missionId],
     );
 
+    // Keep deviceId only as metadata in the URL.
+    // Do not select/switch the active device from HeatMap.
     setSearchParams(
       {
         missionId: mission.missionId,
@@ -290,10 +294,6 @@ export default function HeatMap() {
       },
       { replace: true },
     );
-
-    if (mission.deviceUuid && mission.deviceUuid !== selectedDeviceId) {
-      await onDeviceChange(mission.deviceUuid);
-    }
   }
 
   function handleBackToExplorer() {
@@ -315,6 +315,7 @@ export default function HeatMap() {
 
   function handleOpenAnalytics(mission) {
     if (!mission?.missionId) return;
+
     navigate(`/analytics?missionId=${encodeURIComponent(mission.missionId)}`);
   }
 
@@ -359,6 +360,7 @@ export default function HeatMap() {
             selectedDeviceId={selectedDeviceId}
             profileLabel={
               profiles.find((item) => item.type === profileType)?.label ||
+              profileType ||
               "Unknown profile"
             }
             selectedMission={selectedMission}

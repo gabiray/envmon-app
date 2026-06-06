@@ -86,8 +86,7 @@ function normalizeDeviceMission(missionId, meta = {}, activeDevice, profiles) {
     mission_id: missionId,
     mission_name: meta.mission_name || missionId,
     device_uuid: activeDevice?.device_uuid || null,
-    profile_type:
-      meta.profile_type || activeDevice?.active_profile_type || null,
+    profile_type: meta.profile_type || activeDevice?.active_profile_type || null,
     profile_label:
       meta.profile_label ||
       activeDevice?.active_profile_label ||
@@ -189,9 +188,6 @@ export default function Missions() {
   const navigate = useNavigate();
   const outlet = useOutletContext() || {};
 
-  const [renameModalOpen, setRenameModalOpen] = useState(false);
-  const [missionToRename, setMissionToRename] = useState(null);
-
   const {
     setPageTitle,
     activeDevice = null,
@@ -208,21 +204,32 @@ export default function Missions() {
 
   const deviceConnected = uiStatus === "connected";
 
-  const [activeTab, setActiveTab] = useState("db");
+  // ── Modal state ───────────────────────────────────────────────────────────
+  const [renameModalOpen, setRenameModalOpen] = useState(false);
+  const [missionToRename, setMissionToRename] = useState(null);
 
-  // ── Data state ────────────────────────────────────────────────────────────
-  const [summary, setSummary] = useState({ mission_count: 0, device_count: 0 });
-  const [dbRows, setDbRows] = useState([]);
-  const [deviceRows, setDeviceRows] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [tableBusy, setTableBusy] = useState(false);
-
-  // ── Details state ─────────────────────────────────────────────────────────
-  const [selectedMissionId, setSelectedMissionId] = useState(null);
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [missionToDelete, setMissionToDelete] = useState(null);
 
   const [detailsModalOpen, setDetailsModalOpen] = useState(false);
   const [detailsMission, setDetailsMission] = useState(null);
   const [detailsLoading, setDetailsLoading] = useState(false);
+
+  // ── Page state ────────────────────────────────────────────────────────────
+  const [activeTab, setActiveTab] = useState("db");
+
+  const [summary, setSummary] = useState({
+    mission_count: 0,
+    device_count: 0,
+  });
+
+  const [dbRows, setDbRows] = useState([]);
+  const [deviceRows, setDeviceRows] = useState([]);
+
+  const [loading, setLoading] = useState(true);
+  const [tableBusy, setTableBusy] = useState(false);
+
+  const [selectedMissionId, setSelectedMissionId] = useState(null);
 
   // ── Toolbar / filter state ────────────────────────────────────────────────
   const [searchValue, setSearchValue] = useState("");
@@ -234,12 +241,50 @@ export default function Missions() {
   const [sortBy, setSortBy] = useState("date_desc");
   const [selectedIds, setSelectedIds] = useState([]);
 
-  // ── Delete modal ──────────────────────────────────────────────────────────
-  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
-  const [missionToDelete, setMissionToDelete] = useState(null);
+  // ── Stable values ─────────────────────────────────────────────────────────
+  // Important:
+  // activeDevice from AppShell can change often because /api/devices is polled.
+  // Do not use the full activeDevice object as a dependency for loadPage().
+  const activeDeviceStable = useMemo(() => {
+    if (!activeDevice || selectedDeviceId === "none") return null;
+
+    return {
+      device_uuid: activeDevice.device_uuid || null,
+      nickname: activeDevice.nickname || null,
+      hostname: activeDevice.hostname || activeDevice.info?.hostname || null,
+      base_url: activeDevice.base_url || null,
+      active_profile_type: activeDevice.active_profile_type || null,
+      active_profile_label: activeDevice.active_profile_label || null,
+    };
+  }, [
+    selectedDeviceId,
+    activeDevice?.device_uuid,
+    activeDevice?.nickname,
+    activeDevice?.hostname,
+    activeDevice?.info?.hostname,
+    activeDevice?.base_url,
+    activeDevice?.active_profile_type,
+    activeDevice?.active_profile_label,
+  ]);
+
+  // Avoid reloads caused only by profiles array identity changes.
+  const profilesKey = JSON.stringify(
+    (profiles || []).map((item) => ({
+      type: item.type,
+      label: item.label,
+    })),
+  );
+
+  const stableProfiles = useMemo(() => {
+    return (profiles || []).map((item) => ({
+      type: item.type,
+      label: item.label,
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profilesKey]);
 
   // Device selection logic:
-  // filter has priority; fallback to topbar selected device
+  // filter has priority; fallback to topbar selected device.
   const effectiveDeviceId =
     selectedDeviceFilter !== "all"
       ? selectedDeviceFilter
@@ -247,7 +292,6 @@ export default function Missions() {
         ? selectedDeviceId
         : null;
 
-  // Active device detection should compare with selectedDeviceId from topbar
   const isEffectiveDeviceActive =
     Boolean(effectiveDeviceId) &&
     selectedDeviceId !== "none" &&
@@ -255,14 +299,14 @@ export default function Missions() {
 
   const canReadLiveDeviceMissions = isEffectiveDeviceActive && deviceConnected;
 
-  // Device tab disabled only when no device is selected anywhere
   const deviceTabDisabled = !effectiveDeviceId;
 
+  // ── Effects ───────────────────────────────────────────────────────────────
   useEffect(() => {
     setPageTitle?.("Missions");
   }, [setPageTitle]);
 
-  // Sync topbar -> local filter
+  // Sync topbar -> local filter.
   useEffect(() => {
     if (selectedDeviceId && selectedDeviceId !== "none") {
       setSelectedDeviceFilter(selectedDeviceId);
@@ -296,15 +340,19 @@ export default function Missions() {
       });
 
       setDbRows(
-        (dbMissions || []).map((item) => normalizeDbMission(item, profiles)),
+        (dbMissions || []).map((item) =>
+          normalizeDbMission(item, stableProfiles),
+        ),
       );
 
       if (canReadLiveDeviceMissions) {
         try {
           const deviceRes = await fetchDeviceMissions();
+
           const ids = Array.isArray(deviceRes?.missions)
             ? deviceRes.missions
             : [];
+
           const metaMap = deviceRes?.missions_meta || {};
 
           setDeviceRows(
@@ -312,8 +360,8 @@ export default function Missions() {
               normalizeDeviceMission(
                 mid,
                 metaMap?.[mid] || {},
-                activeDevice,
-                profiles,
+                activeDeviceStable,
+                stableProfiles,
               ),
             ),
           );
@@ -330,28 +378,18 @@ export default function Missions() {
     activeTab,
     effectiveDeviceId,
     canReadLiveDeviceMissions,
-    activeDevice,
-    profiles,
+    activeDeviceStable,
+    stableProfiles,
   ]);
 
+  // Single automatic load effect.
+  // The old second effect caused duplicate loading on the "device" tab.
   useEffect(() => {
     loadPage();
   }, [loadPage]);
 
-  useEffect(() => {
-    if (activeTab !== "device") return;
-    if (deviceTabDisabled) return;
-
-    loadPage();
-  }, [activeTab, deviceTabDisabled, loadPage]);
-
   // ── Derived data ──────────────────────────────────────────────────────────
   const deviceTabRows = useMemo(
-    () => mergeMissionSources(dbRows, deviceRows),
-    [dbRows, deviceRows],
-  );
-
-  const mergedRows = useMemo(
     () => mergeMissionSources(dbRows, deviceRows),
     [dbRows, deviceRows],
   );
@@ -413,8 +451,8 @@ export default function Missions() {
     const q = searchValue.trim().toLowerCase();
     let rows = [...baseRows];
 
-    // Database tab ignores selected device
-    // Device tab respects selected device
+    // Database tab ignores selected device.
+    // Device tab respects selected device.
     if (activeTab === "device" && selectedDeviceFilter !== "all") {
       rows = rows.filter((m) => m.device_uuid === selectedDeviceFilter);
     }
@@ -514,6 +552,7 @@ export default function Missions() {
     if (!mission.in_db) return;
 
     setDetailsLoading(true);
+
     try {
       const details = await fetchDbMissionDetails(mission.mission_id);
       setDetailsMission(mapMissionToDetailsModal(mission, details));
@@ -526,6 +565,7 @@ export default function Missions() {
 
   function handleRenameRequest(mission) {
     if (!mission) return;
+
     setMissionToRename(mission);
     setRenameModalOpen(true);
   }
@@ -563,6 +603,7 @@ export default function Missions() {
     if (!mission || mission.in_db) return;
 
     setTableBusy(true);
+
     try {
       await importSelectedMissions([mission.mission_id]);
       await loadPage();
@@ -580,6 +621,7 @@ export default function Missions() {
     if (!importableIds.length) return;
 
     setTableBusy(true);
+
     try {
       await importSelectedMissions(importableIds);
       await loadPage();
@@ -590,6 +632,7 @@ export default function Missions() {
 
   async function handleImportNew() {
     setTableBusy(true);
+
     try {
       await importNewMissions();
       await loadPage();
@@ -600,6 +643,7 @@ export default function Missions() {
 
   function handleDeleteRequest(mission) {
     if (!mission) return;
+
     setMissionToDelete(mission);
     setDeleteModalOpen(true);
   }
@@ -627,7 +671,8 @@ export default function Missions() {
 
       if (selectedMissionId === missionToDelete.mission_id) {
         setSelectedMissionId(null);
-        setSelectedMissionDetails(null);
+        setDetailsMission(null);
+        setDetailsModalOpen(false);
       }
 
       setDeleteModalOpen(false);
@@ -683,7 +728,7 @@ export default function Missions() {
         devicesRaw.find((d) => d.device_uuid === selectedDeviceFilter)
           ?.hostname ||
         "Device"
-      : activeDevice?.nickname || "Device";
+      : activeDeviceStable?.nickname || "Device";
 
   return (
     <div className="flex h-full flex-col gap-5">
@@ -715,7 +760,7 @@ export default function Missions() {
               devicesRaw={devicesRaw}
               selectedDeviceId={selectedDeviceFilter}
               onDeviceChange={handleDeviceFilterChange}
-              profiles={profiles}
+              profiles={stableProfiles}
               selectedProfileFilter={selectedProfileFilter}
               onProfileFilterChange={setSelectedProfileFilter}
               locationOptions={locationOptions}
@@ -750,12 +795,15 @@ export default function Missions() {
                 .map((m) => m.mission_id);
 
               if (!analyzableIds.length) return;
+
               navigate(`/analytics?missionIds=${analyzableIds.join(",")}`);
             }}
             onOpenDetails={handleOpenDetails}
             onOpenHeatmap={(m) =>
               navigate(
-                `/heatmap?missionId=${encodeURIComponent(m.mission_id)}&deviceId=${encodeURIComponent(m.device_uuid || "")}`,
+                `/heatmap?missionId=${encodeURIComponent(
+                  m.mission_id,
+                )}&deviceId=${encodeURIComponent(m.device_uuid || "")}`,
               )
             }
             onOpenAnalytics={(m) =>
@@ -778,6 +826,7 @@ export default function Missions() {
         busy={tableBusy}
         onClose={() => {
           if (tableBusy) return;
+
           setDeleteModalOpen(false);
           setMissionToDelete(null);
         }}
@@ -790,6 +839,7 @@ export default function Missions() {
         busy={tableBusy}
         onClose={() => {
           if (tableBusy) return;
+
           setRenameModalOpen(false);
           setMissionToRename(null);
         }}
@@ -803,18 +853,24 @@ export default function Missions() {
         analyticsDisabled={!detailsMission?.missionId || detailsLoading}
         onClose={() => {
           if (detailsLoading) return;
+
           setDetailsModalOpen(false);
           setDetailsMission(null);
         }}
         onOpenHeatmap={() => {
           if (!detailsMission?.missionId) return;
+
           setDetailsModalOpen(false);
+
           navigate(
-            `/heatmap?missionId=${encodeURIComponent(detailsMission.missionId)}&deviceId=${encodeURIComponent(detailsMission.deviceUuid || "")}`,
+            `/heatmap?missionId=${encodeURIComponent(
+              detailsMission.missionId,
+            )}&deviceId=${encodeURIComponent(detailsMission.deviceUuid || "")}`,
           );
         }}
         onOpenAnalytics={() => {
           if (!detailsMission?.missionId) return;
+
           setDetailsModalOpen(false);
           navigate(`/analytics?missionId=${detailsMission.missionId}`);
         }}

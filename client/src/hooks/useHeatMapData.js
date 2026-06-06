@@ -13,6 +13,7 @@ function getDeviceUuid(device) {
 
 function getDeviceDisplayName(device) {
   if (!device) return "Unknown device";
+
   return (
     device.nickname ||
     device.hostname ||
@@ -40,6 +41,7 @@ function formatEpoch(epoch) {
 
 function formatCoords(lat, lon) {
   if (lat == null || lon == null) return "No coordinates";
+
   return `${Number(lat).toFixed(6)}, ${Number(lon).toFixed(6)}`;
 }
 
@@ -50,9 +52,10 @@ function normalizeSearch(value) {
 function buildDeviceNameMap(devicesRaw = []) {
   const map = new Map();
 
-  for (const device of devicesRaw) {
+  for (const device of devicesRaw || []) {
     const uuid = getDeviceUuid(device);
     if (!uuid) continue;
+
     map.set(uuid, getDeviceDisplayName(device));
   }
 
@@ -63,41 +66,66 @@ function getLocationKey(lat, lon) {
   return `${Number(lat).toFixed(5)}|${Number(lon).toFixed(5)}`;
 }
 
+function getArchivedDeviceName(deviceUuid) {
+  if (!deviceUuid) return "Unknown device";
+
+  return `Archived device ${String(deviceUuid).slice(0, 8)}`;
+}
+
 function toUiMission(item, deviceNameMap) {
   const lat = item?.start?.lat ?? null;
   const lon = item?.start?.lon ?? null;
+
   const deviceUuid = item?.device_uuid || "";
-  const deviceName = deviceNameMap.get(deviceUuid) || "Unknown device";
-  const dateLabel = formatEpoch(item?.started_at_epoch || item?.created_at_epoch);
+  const deviceName =
+    deviceNameMap.get(deviceUuid) || getArchivedDeviceName(deviceUuid);
+
+  const startedAtEpoch = item?.started_at_epoch ?? null;
+  const createdAtEpoch = item?.created_at_epoch ?? null;
+  const importedAtEpoch = item?.imported_at_epoch ?? null;
+
+  const dateLabel = formatEpoch(startedAtEpoch || createdAtEpoch);
 
   return {
     missionId: item?.mission_id || "",
     missionName: item?.mission_name || item?.mission_id || "Unnamed mission",
+
     deviceUuid,
     deviceName,
+
     profileType: item?.profile_type || "unknown",
-    profileLabel: item?.profile_label || "",
-    startedAtEpoch: item?.started_at_epoch ?? null,
+    profileLabel: item?.profile_label || item?.profile_type || "",
+
+    startedAtEpoch,
     endedAtEpoch: item?.ended_at_epoch ?? null,
-    importedAtEpoch: item?.imported_at_epoch ?? null,
+    importedAtEpoch,
+
     status: item?.status || "unknown",
     stopReason: item?.stop_reason || "",
+
     locationMode: item?.location_mode || "unknown",
+
     hasGps: Boolean(item?.has_gps),
     hasImages: Boolean(item?.has_images),
+
     start: {
       lat,
       lon,
       alt_m: item?.start?.alt ?? item?.start?.alt_m ?? null,
     },
-    locationKey:
-      lat != null && lon != null ? getLocationKey(lat, lon) : null,
+
+    locationKey: lat != null && lon != null ? getLocationKey(lat, lon) : null,
+
     dateLabel,
     locationLabel: formatCoords(lat, lon),
+
     searchBlob: [
       item?.mission_name || "",
       item?.mission_id || "",
       deviceName,
+      item?.device_uuid || "",
+      item?.profile_type || "",
+      item?.profile_label || "",
       item?.status || "",
       item?.location_mode || "",
       dateLabel,
@@ -105,6 +133,7 @@ function toUiMission(item, deviceNameMap) {
     ]
       .join(" ")
       .toLowerCase(),
+
     raw: item,
   };
 }
@@ -128,15 +157,18 @@ export default function useHeatMapData({
 
       try {
         const data = await fetchDbMissions();
+
         if (cancelled) return;
+
         setMissionsRaw(Array.isArray(data) ? data : []);
       } catch (error) {
         if (cancelled) return;
+
         setMissionsRaw([]);
         setErrorText(
           error?.response?.data?.error ||
             error?.message ||
-            "Failed to load database missions."
+            "Failed to load database missions.",
         );
       } finally {
         if (!cancelled) {
@@ -154,12 +186,23 @@ export default function useHeatMapData({
 
   const deviceNameMap = useMemo(
     () => buildDeviceNameMap(devicesRaw),
-    [devicesRaw]
+    [devicesRaw],
   );
 
   const allMissions = useMemo(() => {
     return (missionsRaw || []).map((item) => toUiMission(item, deviceNameMap));
   }, [missionsRaw, deviceNameMap]);
+
+  const allMissionMap = useMemo(() => {
+    const map = new Map();
+
+    for (const mission of allMissions) {
+      if (!mission.missionId) continue;
+      map.set(mission.missionId, mission);
+    }
+
+    return map;
+  }, [allMissions]);
 
   const profileMissions = useMemo(() => {
     return allMissions.filter((item) => item.profileType === profileType);
@@ -167,26 +210,33 @@ export default function useHeatMapData({
 
   const normalizedSearch = useMemo(
     () => normalizeSearch(searchValue),
-    [searchValue]
+    [searchValue],
   );
 
+  // Important:
+  // This no longer filters by selectedDeviceId.
+  // HeatMap must show all DB missions for the selected profile,
+  // including missions from archived/deleted devices.
   const activeDeviceMissions = useMemo(() => {
-    const base = profileMissions.filter(
-      (item) => item.deviceUuid === selectedDeviceId
-    );
-
     const filtered = !normalizedSearch
-      ? base
-      : base.filter((item) => item.searchBlob.includes(normalizedSearch));
+      ? profileMissions
+      : profileMissions.filter((item) =>
+          item.searchBlob.includes(normalizedSearch),
+        );
 
-    return filtered.sort((a, b) => (b.startedAtEpoch || 0) - (a.startedAtEpoch || 0));
-  }, [profileMissions, selectedDeviceId, normalizedSearch]);
+    return [...filtered].sort(
+      (a, b) => (b.startedAtEpoch || 0) - (a.startedAtEpoch || 0),
+    );
+  }, [profileMissions, normalizedSearch]);
 
   const missionMap = useMemo(() => {
     const map = new Map();
+
     for (const mission of profileMissions) {
+      if (!mission.missionId) continue;
       map.set(mission.missionId, mission);
     }
+
     return map;
   }, [profileMissions]);
 
@@ -210,17 +260,27 @@ export default function useHeatMapData({
           missionsCount: 1,
           lastMissionEpoch: mission.startedAtEpoch || 0,
           missions: [mission],
-          hasActiveDeviceMission: mission.deviceUuid === selectedDeviceId,
+
+          // Used only for visual priority/highlight.
+          // It no longer controls whether missions are shown.
+          hasActiveDeviceMission:
+            selectedDeviceId !== "none" &&
+            mission.deviceUuid === selectedDeviceId,
         });
+
         continue;
       }
 
       prev.missionsCount += 1;
       prev.missions.push(mission);
+
       prev.hasActiveDeviceMission =
-        prev.hasActiveDeviceMission || mission.deviceUuid === selectedDeviceId;
+        prev.hasActiveDeviceMission ||
+        (selectedDeviceId !== "none" &&
+          mission.deviceUuid === selectedDeviceId);
 
       const missionEpoch = mission.startedAtEpoch || 0;
+
       if (missionEpoch >= (prev.lastMissionEpoch || 0)) {
         prev.lastMissionEpoch = missionEpoch;
       }
@@ -229,13 +289,14 @@ export default function useHeatMapData({
     return Array.from(grouped.values())
       .map((item) => ({
         ...item,
-        missions: item.missions.sort(
-          (a, b) => (b.startedAtEpoch || 0) - (a.startedAtEpoch || 0)
+        missions: [...item.missions].sort(
+          (a, b) => (b.startedAtEpoch || 0) - (a.startedAtEpoch || 0),
         ),
       }))
       .sort((a, b) => {
         if (a.hasActiveDeviceMission && !b.hasActiveDeviceMission) return -1;
         if (!a.hasActiveDeviceMission && b.hasActiveDeviceMission) return 1;
+
         return (b.lastMissionEpoch || 0) - (a.lastMissionEpoch || 0);
       });
   }, [profileMissions, selectedDeviceId]);
@@ -243,9 +304,13 @@ export default function useHeatMapData({
   return {
     loading,
     errorText,
+
     allMissions,
+    allMissionMap,
+
     profileMissions,
     activeDeviceMissions,
+
     missionMap,
     locationPins,
   };
