@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import * as maptilersdk from "@maptiler/sdk";
-import "@maptiler/sdk/dist/maptiler-sdk.css";
 
 import {
   FiAlertTriangle,
@@ -9,53 +8,39 @@ import {
   FiCrosshair,
   FiMapPin,
   FiPlay,
-  FiRadio,
-  FiSave,
-  FiSquare,
+  FiPlus,
+  FiRefreshCw,
   FiStopCircle,
+  FiX,
 } from "react-icons/fi";
 
-const MAPTILER_KEY = import.meta.env.VITE_MAPTILER_KEY;
+import {
+  createStartPoint,
+  fetchStartPoints,
+} from "../../services/startPointsApi";
 
-if (MAPTILER_KEY) {
-  maptilersdk.config.apiKey = MAPTILER_KEY;
+import MissionStaticLocation, {
+  DEFAULT_CENTER,
+  MAP_STYLE_URL,
+  MAPTILER_KEY,
+  createSmallMarkerElement,
+  getSourceLabel,
+  isValidLocation,
+  normalizeLocation,
+  toNumberOrNull,
+} from "./MissionStaticLocation";
+
+function previousLocationKey(deviceId) {
+  return `envmon.static.previousLocation.${deviceId || "default"}`;
 }
 
-const TOPO_STYLE_URL = `https://api.maptiler.com/maps/topo-v4/style.json?key=${MAPTILER_KEY}`;
-const DEFAULT_CENTER = [26.255, 47.651];
-
-function buildStorageKey(deviceId) {
-  return `envmon.staticLocation.${deviceId || "default"}`;
+function normalizeStartPoint(point) {
+  return normalizeLocation(point, {
+    source: point?.source || "saved",
+  });
 }
 
-function toNumberOrNull(value) {
-  if (value === "" || value === null || value === undefined) return null;
-
-  const n = Number(value);
-  return Number.isFinite(n) ? n : null;
-}
-
-function isValidLocation(location) {
-  const lat = toNumberOrNull(location?.lat);
-  const lon = toNumberOrNull(location?.lon);
-
-  return (
-    lat !== null &&
-    lon !== null &&
-    lat >= -90 &&
-    lat <= 90 &&
-    lon >= -180 &&
-    lon <= 180
-  );
-}
-
-function formatCoord(value, decimals = 6) {
-  const n = toNumberOrNull(value);
-  if (n === null) return "—";
-  return n.toFixed(decimals);
-}
-
-function buildDefaultMissionName() {
+function buildDefaultMissionName(location) {
   const now = new Date();
 
   const dateStr = now.toLocaleDateString("ro-RO", {
@@ -69,69 +54,41 @@ function buildDefaultMissionName() {
     minute: "2-digit",
   });
 
+  if (location?.name) {
+    return `${location.name} - Static monitoring ${dateStr} ${timeStr}`;
+  }
+
   return `Static monitoring ${dateStr} ${timeStr}`;
 }
 
-function getLocationLabel(location) {
-  if (!isValidLocation(location)) return "No location selected";
-
-  if (location.source === "gps") return "GPS location";
-  if (location.source === "previous") return "Previous location";
-  if (location.source === "map") return "Map selected location";
-
-  return "Static location";
-}
-
-function readSavedLocation(deviceId) {
+function readPreviousLocation(deviceId) {
   try {
-    const raw = localStorage.getItem(buildStorageKey(deviceId));
+    const raw = localStorage.getItem(previousLocationKey(deviceId));
     if (!raw) return null;
 
-    const parsed = JSON.parse(raw);
-
-    if (!isValidLocation(parsed)) return null;
-
-    return {
-      lat: Number(parsed.lat),
-      lon: Number(parsed.lon),
-      alt_m: toNumberOrNull(parsed.alt_m),
+    return normalizeLocation(JSON.parse(raw), {
       source: "previous",
-    };
+    });
   } catch {
     return null;
   }
 }
 
-function saveLocation(deviceId, location) {
-  if (!isValidLocation(location)) return;
+function savePreviousLocation(deviceId, location) {
+  const normalized = normalizeLocation(location);
+  if (!normalized) return;
 
   localStorage.setItem(
-    buildStorageKey(deviceId),
+    previousLocationKey(deviceId),
     JSON.stringify({
-      lat: Number(location.lat),
-      lon: Number(location.lon),
-      alt_m: toNumberOrNull(location.alt_m),
+      id: normalized.id,
+      name: normalized.name || "",
+      lat: normalized.lat,
+      lon: normalized.lon,
+      alt_m: normalized.alt_m,
+      source: normalized.source || "saved",
     }),
   );
-}
-
-function makeMarkerElement() {
-  const el = document.createElement("div");
-
-  el.className =
-    "grid h-8 w-8 place-items-center rounded-full border-2 border-base-100 bg-primary text-primary-content shadow-lg";
-
-  el.innerHTML = `
-    <div style="
-      width: 10px;
-      height: 10px;
-      border-radius: 9999px;
-      background: currentColor;
-      box-shadow: 0 0 0 6px rgba(59, 130, 246, 0.22);
-    "></div>
-  `;
-
-  return el;
 }
 
 function PanelToast({ toast, onClose }) {
@@ -144,16 +101,18 @@ function PanelToast({ toast, onClose }) {
         ? "alert-warning"
         : "alert-success";
 
+  const Icon =
+    toast.type === "error" || toast.type === "warning"
+      ? FiAlertTriangle
+      : FiCheckCircle;
+
   return (
     <div className="toast toast-bottom toast-center z-[9999]">
-      <div className={`alert ${alertClass} min-w-[320px] shadow-xl`}>
-        {toast.type === "error" || toast.type === "warning" ? (
-          <FiAlertTriangle />
-        ) : (
-          <FiCheckCircle />
-        )}
-
-        <span>{toast.text}</span>
+      <div
+        className={`alert ${alertClass} min-w-[320px] max-w-[460px] rounded-2xl shadow-xl`}
+      >
+        <Icon className="shrink-0" />
+        <span className="text-sm">{toast.text}</span>
 
         <button
           type="button"
@@ -167,45 +126,35 @@ function PanelToast({ toast, onClose }) {
   );
 }
 
-function MiniStaticMap({ selectedLocation, onPickLocation }) {
-  const mapNodeRef = useRef(null);
+function MiniStaticMap({ location, onOpenPicker }) {
+  const mapContainerRef = useRef(null);
   const mapRef = useRef(null);
   const markerRef = useRef(null);
-  const onPickLocationRef = useRef(onPickLocation);
+  const onOpenPickerRef = useRef(onOpenPicker);
 
   useEffect(() => {
-    onPickLocationRef.current = onPickLocation;
-  }, [onPickLocation]);
+    onOpenPickerRef.current = onOpenPicker;
+  }, [onOpenPicker]);
 
   useEffect(() => {
-    if (!MAPTILER_KEY || !mapNodeRef.current || mapRef.current) return;
+    if (!MAPTILER_KEY || !mapContainerRef.current || mapRef.current) return;
+
+    const initialCenter = isValidLocation(location)
+      ? [Number(location.lon), Number(location.lat)]
+      : DEFAULT_CENTER;
 
     const map = new maptilersdk.Map({
-      container: mapNodeRef.current,
-      style: TOPO_STYLE_URL,
-      center: DEFAULT_CENTER,
-      zoom: 12.2,
+      container: mapContainerRef.current,
+      style: MAP_STYLE_URL,
+      center: initialCenter,
+      zoom: isValidLocation(location) ? 15.5 : 12,
       pitch: 0,
       bearing: 0,
       attributionControl: false,
     });
 
-    map.addControl(
-      new maptilersdk.NavigationControl({
-        showCompass: false,
-      }),
-      "top-right",
-    );
-
-    map.on("click", (event) => {
-      const lngLat = event.lngLat;
-
-      onPickLocationRef.current({
-        lat: Number(lngLat.lat),
-        lon: Number(lngLat.lng),
-        alt_m: null,
-        source: "map",
-      });
+    map.on("click", () => {
+      onOpenPickerRef.current();
     });
 
     mapRef.current = map;
@@ -215,7 +164,7 @@ function MiniStaticMap({ selectedLocation, onPickLocation }) {
         markerRef.current?.remove();
         map.remove();
       } catch {
-        // Ignore map cleanup errors.
+        // Ignore cleanup errors.
       }
 
       markerRef.current = null;
@@ -235,57 +184,116 @@ function MiniStaticMap({ selectedLocation, onPickLocation }) {
 
     markerRef.current = null;
 
-    if (!isValidLocation(selectedLocation)) return;
+    if (!isValidLocation(location)) return;
 
-    const center = [Number(selectedLocation.lon), Number(selectedLocation.lat)];
+    const center = [Number(location.lon), Number(location.lat)];
 
-    const marker = new maptilersdk.Marker({
-      element: makeMarkerElement(),
+    markerRef.current = new maptilersdk.Marker({
+      element: createSmallMarkerElement(),
       anchor: "center",
     })
       .setLngLat(center)
       .addTo(map);
 
-    markerRef.current = marker;
-
     map.flyTo({
       center,
-      zoom: 15.5,
-      pitch: 0,
-      bearing: 0,
-      duration: 700,
+      zoom: 15.8,
+      duration: 650,
       essential: true,
     });
-  }, [selectedLocation]);
+  }, [location]);
 
   if (!MAPTILER_KEY) {
     return (
-      <div className="grid h-72 place-items-center rounded-2xl border border-dashed border-base-300 bg-base-200/60 p-5 text-center">
+      <button
+        type="button"
+        className="grid h-full min-h-[500px] w-full place-items-center rounded-2xl border border-dashed border-base-300 bg-base-200/60 p-5 text-center"
+        onClick={onOpenPicker}
+      >
         <div>
-          <FiMapPin className="mx-auto text-2xl text-base-content/50" />
+          <FiMapPin className="mx-auto text-2xl text-base-content/45" />
           <div className="mt-2 text-sm font-semibold">Map unavailable</div>
           <div className="mt-1 text-xs text-base-content/55">
-            Set VITE_MAPTILER_KEY to enable point selection on map.
+            Set VITE_MAPTILER_KEY to enable map selection.
           </div>
         </div>
-      </div>
+      </button>
     );
   }
 
   return (
-    <div className="relative overflow-hidden rounded-2xl border border-base-300 bg-base-200">
-      <div ref={mapNodeRef} className="h-72 w-full" />
+    <button
+      type="button"
+      className="relative block h-full min-h-[500px] w-full overflow-hidden rounded-2xl border border-base-300 bg-base-200 text-left"
+      onClick={onOpenPicker}
+    >
+      <div ref={mapContainerRef} className="h-full min-h-[500px] w-full" />
 
       <div className="absolute bottom-3 left-3 right-3 rounded-xl border border-base-300 bg-base-100/90 px-3 py-2 text-xs shadow-sm backdrop-blur">
-        Click on the map to choose the fixed station position.
+        Click the map to edit the static location.
       </div>
-    </div>
+    </button>
+  );
+}
+
+function SelectedLocationCompact({ location, onEdit }) {
+  if (!isValidLocation(location)) {
+    return (
+      <button
+        type="button"
+        className="flex w-full items-center gap-3 rounded-2xl border border-dashed border-base-300 bg-base-100 px-4 py-4 text-left transition hover:border-primary/40 hover:bg-primary/5"
+        onClick={onEdit}
+      >
+        <div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-base-200 text-base-content/45">
+          <FiMapPin />
+        </div>
+
+        <div>
+          <div className="text-sm font-semibold">No location selected</div>
+          <div className="mt-1 text-xs text-base-content/55">
+            Choose a saved point, use GPS once, or select a point on the map.
+          </div>
+        </div>
+      </button>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      className="flex w-full items-center justify-between gap-4 rounded-2xl border border-base-300 bg-base-100 px-4 py-4 text-left transition hover:border-primary/40 hover:bg-primary/5"
+      onClick={onEdit}
+    >
+      <div className="flex min-w-0 items-center gap-3">
+        <div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-primary/10 text-primary">
+          <FiMapPin />
+        </div>
+
+        <div className="min-w-0">
+          <div className="truncate text-sm font-semibold">
+            {location.name || "Static location"}
+          </div>
+
+          <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-base-content/55">
+            <span>{getSourceLabel(location.source)}</span>
+
+            {location.alt_m !== null && location.alt_m !== undefined ? (
+              <>
+                <span>•</span>
+                <span>{Number(location.alt_m).toFixed(1)} m altitude</span>
+              </>
+            ) : null}
+          </div>
+        </div>
+      </div>
+
+      <span className="btn btn-ghost btn-xs rounded-lg">Edit</span>
+    </button>
   );
 }
 
 export default function MissionStaticPanel({
   selectedDeviceId = "none",
-  deviceStatus = "inactive",
   deviceState = null,
   missionRunning = false,
   busy = false,
@@ -297,21 +305,34 @@ export default function MissionStaticPanel({
 }) {
   const [missionName, setMissionName] = useState("");
   const [duration, setDuration] = useState(3600);
-  const [sampleHz, setSampleHz] = useState(1);
-  const [usePreviousLocation, setUsePreviousLocation] = useState(false);
-  const [selectedLocation, setSelectedLocation] = useState(null);
-  const [toast, setToast] = useState(null);
 
+  const [startPoints, setStartPoints] = useState([]);
+  const [startPointsLoading, setStartPointsLoading] = useState(false);
+  const [selectedStartPointId, setSelectedStartPointId] = useState("");
+  const [selectedLocation, setSelectedLocation] = useState(null);
+
+  const [usePreviousLocation, setUsePreviousLocation] = useState(false);
+  const [locationModalOpen, setLocationModalOpen] = useState(false);
+  const [modalInitialLocation, setModalInitialLocation] = useState(null);
+  const [savingLocation, setSavingLocation] = useState(false);
+
+  const [toast, setToast] = useState(null);
   const toastTimerRef = useRef(null);
 
-  const hasGpsFix = isValidLocation(gpsFix);
+  const liveGpsFix = useMemo(
+    () =>
+      normalizeLocation(gpsFix || deviceState?.gps?.last_good_fix, {
+        source: "gps",
+        name: "Device GPS fix",
+      }),
+    [gpsFix, deviceState],
+  );
+
+  const deviceSelected = selectedDeviceId && selectedDeviceId !== "none";
   const hasSelectedLocation = isValidLocation(selectedLocation);
 
   const canStart =
-    deviceStatus === "connected" &&
-    !busy &&
-    !missionRunning &&
-    hasSelectedLocation;
+    deviceSelected && !busy && !missionRunning && hasSelectedLocation;
 
   const activeMissionName =
     deviceState?.mission_name || deviceState?.mission_id || "Static mission";
@@ -340,6 +361,27 @@ export default function MissionStaticPanel({
     }, 3500);
   }
 
+  async function loadStartPoints() {
+    if (!deviceSelected) {
+      setStartPoints([]);
+      setSelectedStartPointId("");
+      return;
+    }
+
+    setStartPointsLoading(true);
+
+    try {
+      const items = await fetchStartPoints(selectedDeviceId);
+      setStartPoints(Array.isArray(items) ? items : []);
+    } catch (error) {
+      console.error("Failed to load static locations", error);
+      setStartPoints([]);
+      showToast("error", "Saved locations could not be loaded.");
+    } finally {
+      setStartPointsLoading(false);
+    }
+  }
+
   useEffect(() => {
     return () => {
       if (toastTimerRef.current) {
@@ -349,87 +391,163 @@ export default function MissionStaticPanel({
   }, []);
 
   useEffect(() => {
-    setUsePreviousLocation(false);
+    setMissionName("");
     setSelectedLocation(null);
+    setSelectedStartPointId("");
+    setUsePreviousLocation(false);
     clearToast();
+    loadStartPoints();
   }, [selectedDeviceId]);
 
   useEffect(() => {
     onLocationChange(hasSelectedLocation ? selectedLocation : null);
   }, [hasSelectedLocation, selectedLocation, onLocationChange]);
 
-  function updateLocation(nextLocation, toastText = "") {
-    setSelectedLocation(nextLocation);
+  function handleSelectSavedLocation(event) {
+    const id = event.target.value;
 
-    if (toastText) {
-      showToast("success", toastText);
-    }
-  }
+    setSelectedStartPointId(id);
+    setUsePreviousLocation(false);
 
-  function handleUseGpsLocation() {
-    if (!hasGpsFix) {
-      showToast("error", "No valid GPS fix available yet.");
+    if (!id) {
+      setSelectedLocation(null);
       return;
     }
 
-    const nextLocation = {
-      lat: Number(gpsFix.lat),
-      lon: Number(gpsFix.lon),
-      alt_m: toNumberOrNull(gpsFix.alt_m),
-      source: "gps",
-    };
+    const point = startPoints.find((item) => String(item.id) === String(id));
+    const normalized = normalizeStartPoint(point);
 
-    setUsePreviousLocation(false);
-    updateLocation(nextLocation, "GPS location loaded.");
+    if (!normalized) {
+      showToast("error", "Selected location is not valid.");
+      return;
+    }
+
+    setSelectedLocation({
+      ...normalized,
+      source: normalized.source || "saved",
+    });
+
+    showToast("success", "Saved location selected.");
   }
 
   function handleUsePreviousLocation(event) {
     const checked = event.target.checked;
-
     setUsePreviousLocation(checked);
 
     if (!checked) return;
 
-    const saved = readSavedLocation(selectedDeviceId);
+    const previous = readPreviousLocation(selectedDeviceId);
 
-    if (!saved) {
+    if (!previous) {
       setUsePreviousLocation(false);
-      showToast("error", "No previous location saved for this station.");
+      showToast("error", "No previous static location saved for this device.");
       return;
     }
 
-    updateLocation(saved, "Previous location loaded.");
+    setSelectedLocation({
+      ...previous,
+      source: "previous",
+    });
+
+    if (previous.id) {
+      setSelectedStartPointId(String(previous.id));
+    } else {
+      setSelectedStartPointId("");
+    }
+
+    showToast("success", "Previous static location loaded.");
   }
 
-  function handleMapPick(location) {
-    setUsePreviousLocation(false);
-    updateLocation(location, "Map location selected.");
+  function handleOpenLocationPicker(initial = null) {
+    setModalInitialLocation(initial || selectedLocation || null);
+    setLocationModalOpen(true);
   }
 
-  function handleSaveSelectedLocation() {
-    if (!hasSelectedLocation) {
-      showToast("error", "Choose a location first.");
+  function handleUseGpsOnce() {
+    if (!liveGpsFix) {
+      showToast("error", "No valid GPS fix available yet.");
       return;
     }
+
+    setModalInitialLocation({
+      ...liveGpsFix,
+      name: "",
+      source: "gps",
+    });
+
+    setLocationModalOpen(true);
+  }
+
+  async function handleSaveStaticLocation(locationDraft) {
+    if (!deviceSelected) {
+      showToast("error", "Select a device before saving the location.");
+      return;
+    }
+
+    const normalized = normalizeLocation(locationDraft);
+
+    if (!normalized) {
+      showToast("error", "Choose a valid static location.");
+      return;
+    }
+
+    setSavingLocation(true);
 
     try {
-      saveLocation(selectedDeviceId, selectedLocation);
-      showToast("success", "Location saved as previous location.");
-    } catch {
-      showToast("error", "Could not save previous location.");
+      const response = await createStartPoint({
+        device_uuid: selectedDeviceId,
+        name: locationDraft.name,
+        latlng: {
+          lat: normalized.lat,
+          lng: normalized.lon,
+        },
+        alt_m: normalized.alt_m,
+        source: normalized.source || "manual",
+        tags: ["static"],
+      });
+
+      const created = response?.item || response?.start_point || response;
+      const normalizedCreated = normalizeStartPoint(created);
+
+      setStartPoints((prev) => {
+        const filtered = prev.filter(
+          (item) => String(item.id) !== String(created.id),
+        );
+
+        return [created, ...filtered];
+      });
+
+      setSelectedStartPointId(String(created.id));
+      setSelectedLocation(normalizedCreated);
+      setUsePreviousLocation(false);
+
+      savePreviousLocation(selectedDeviceId, normalizedCreated);
+
+      setLocationModalOpen(false);
+      showToast("success", "Static location saved.");
+    } catch (error) {
+      console.error("Failed to save static location", error);
+      showToast("error", "Static location could not be saved.");
+    } finally {
+      setSavingLocation(false);
     }
   }
 
   async function handleStartClick() {
+    if (!deviceSelected) {
+      showToast("error", "Select a device before starting the session.");
+      return;
+    }
+
     if (!hasSelectedLocation) {
-      showToast("error", "Choose a static location before starting the mission.");
+      showToast("error", "Choose a static location before starting the session.");
       return;
     }
 
     const payload = {
-      mission_name: missionName.trim() || buildDefaultMissionName(),
+      mission_name: missionName.trim() || buildDefaultMissionName(selectedLocation),
       duration: Number(duration),
-      sample_hz: Number(sampleHz),
+      sample_hz: 1,
       photo_every: 0,
       gps_mode: "off",
       camera_mode: "off",
@@ -439,6 +557,8 @@ export default function MissionStaticPanel({
         lon: Number(selectedLocation.lon),
         alt_m: toNumberOrNull(selectedLocation.alt_m),
       },
+      start_point_id: selectedLocation.id || selectedStartPointId || null,
+      location_name: selectedLocation.name || "",
     };
 
     const result = await onStartMission(payload);
@@ -448,28 +568,23 @@ export default function MissionStaticPanel({
       return;
     }
 
-    try {
-      saveLocation(selectedDeviceId, selectedLocation);
-    } catch {
-      // Mission can still start even if local save fails.
-    }
-
+    savePreviousLocation(selectedDeviceId, selectedLocation);
     showToast("success", "Static monitoring session started.");
   }
 
   return (
     <section className="rounded-box border border-base-300 bg-base-100 shadow-sm">
       <div className="border-b border-base-300 px-5 py-5">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-          <div className="flex items-start gap-3">
-            <FiRadio className="mt-1 text-lg text-primary" />
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex items-center gap-2">
+            <FiCrosshair className="text-lg text-primary" />
 
             <div>
               <h2 className="text-lg font-semibold">
                 Static monitoring session
               </h2>
               <p className="text-sm text-base-content/60">
-                Configure the mission and choose the fixed monitoring location.
+                Configure the mission and select one fixed monitoring location.
               </p>
             </div>
           </div>
@@ -493,8 +608,8 @@ export default function MissionStaticPanel({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-5 p-5 xl:grid-cols-12">
-        <div className="space-y-4 xl:col-span-7">
+      <div className="grid items-stretch gap-5 p-5 xl:grid-cols-[minmax(0,1fr)_minmax(360px,42%)]">
+        <div className="flex h-full flex-col gap-4">
           {!missionRunning ? (
             <>
               <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -506,11 +621,9 @@ export default function MissionStaticPanel({
                   <input
                     type="text"
                     className="input input-bordered rounded-xl"
-                    placeholder={buildDefaultMissionName()}
+                    placeholder={buildDefaultMissionName(selectedLocation)}
                     value={missionName}
-                    onChange={(event) => {
-                      setMissionName(event.target.value);
-                    }}
+                    onChange={(event) => setMissionName(event.target.value)}
                   />
                 </label>
 
@@ -526,136 +639,126 @@ export default function MissionStaticPanel({
                     step="10"
                     className="input input-bordered rounded-xl"
                     value={duration}
-                    onChange={(event) => {
-                      setDuration(event.target.value);
-                    }}
+                    onChange={(event) => setDuration(event.target.value)}
                   />
                 </label>
               </div>
 
-              <div className="rounded-2xl border border-base-300 bg-base-200/45 p-4">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="rounded-2xl border border-base-300 bg-base-200/35 p-4">
+                <div className="flex items-start gap-3">
+                  <div className="grid h-9 w-9 shrink-0 place-items-center rounded-2xl bg-primary/10 text-primary">
+                    <FiMapPin />
+                  </div>
+
                   <div>
                     <div className="text-sm font-semibold">
-                      Location source
+                      Monitoring location
                     </div>
                     <div className="mt-1 text-xs text-base-content/55">
-                      Use GPS once, reuse the last position, or click directly
+                      Select a saved point, use GPS once, or choose a new point
                       on the map.
                     </div>
                   </div>
+                </div>
 
-                  <div className="flex flex-wrap gap-2">
+                <div className="mt-4">
+                  <label className="form-control">
+                    <div className="label pb-1">
+                      <span className="label-text">Saved location</span>
+                    </div>
+
+                    <select
+                      className="select select-bordered w-full rounded-xl"
+                      value={selectedStartPointId}
+                      onChange={handleSelectSavedLocation}
+                      disabled={startPointsLoading || startPoints.length === 0}
+                    >
+                      <option value="">
+                        {startPoints.length === 0
+                          ? "No saved static locations"
+                          : "Choose a saved location"}
+                      </option>
+
+                      {startPoints.map((point) => (
+                        <option key={point.id} value={point.id}>
+                          {point.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <div className="mt-3 flex flex-wrap gap-2">
                     <button
                       type="button"
                       className="btn btn-sm btn-outline rounded-xl"
-                      onClick={handleUseGpsLocation}
-                      disabled={!hasGpsFix}
+                      onClick={handleUseGpsOnce}
+                      disabled={!liveGpsFix}
                     >
                       <FiCrosshair />
-                      Use GPS
+                      Use GPS once
+                    </button>
+
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-primary rounded-xl"
+                      onClick={() => handleOpenLocationPicker()}
+                      disabled={!deviceSelected}
+                    >
+                      <FiPlus />
+                      Choose on map
                     </button>
 
                     <button
                       type="button"
                       className="btn btn-sm btn-outline rounded-xl"
-                      onClick={handleSaveSelectedLocation}
-                      disabled={!hasSelectedLocation}
+                      onClick={loadStartPoints}
+                      disabled={startPointsLoading || !deviceSelected}
                     >
-                      <FiSave />
-                      Save location
+                      {startPointsLoading ? (
+                        <span className="loading loading-spinner loading-xs" />
+                      ) : (
+                        <FiRefreshCw />
+                      )}
+                      Refresh
                     </button>
                   </div>
-                </div>
 
-                <label className="mt-4 flex cursor-pointer items-center gap-3 rounded-xl border border-base-300 bg-base-100 px-3 py-3">
-                  <input
-                    type="checkbox"
-                    className="checkbox checkbox-primary checkbox-sm"
-                    checked={usePreviousLocation}
-                    onChange={handleUsePreviousLocation}
-                    disabled={!selectedDeviceId || selectedDeviceId === "none"}
-                  />
+                  <label className="mt-3 flex cursor-pointer items-center gap-3 rounded-xl border border-base-300 bg-base-100 px-3 py-3">
+                    <input
+                      type="checkbox"
+                      className="checkbox checkbox-primary checkbox-sm"
+                      checked={usePreviousLocation}
+                      onChange={handleUsePreviousLocation}
+                      disabled={!deviceSelected}
+                    />
 
-                  <span>
-                    <span className="block text-sm font-medium">
-                      Use previous location
+                    <span>
+                      <span className="block text-sm font-medium">
+                        Use previous location
+                      </span>
+                      <span className="block text-xs text-base-content/55">
+                        Loads the last static location used for this device.
+                      </span>
                     </span>
-                    <span className="block text-xs text-base-content/55">
-                      Loads the last saved static position for this device.
-                    </span>
-                  </span>
-                </label>
-              </div>
-
-              <div className="rounded-2xl border border-base-300 bg-base-200/45 p-4">
-                <div className="flex items-start gap-3">
-                  <FiMapPin className="mt-1 text-lg text-primary" />
-
-                  <div className="min-w-0">
-                    <div className="text-sm font-semibold">
-                      {getLocationLabel(selectedLocation)}
-                    </div>
-
-                    <div className="mt-2 font-mono text-sm text-base-content/70">
-                      Lat: {formatCoord(selectedLocation?.lat)}
-                      <br />
-                      Lon: {formatCoord(selectedLocation?.lon)}
-                      <br />
-                      Alt: {formatCoord(selectedLocation?.alt_m, 1)} m
-                    </div>
-                  </div>
+                  </label>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-                <label className="form-control">
-                  <div className="label">
-                    <span className="label-text">Sample rate</span>
-                    <span className="label-text-alt">Hz</span>
-                  </div>
+              <SelectedLocationCompact
+                location={selectedLocation}
+                onEdit={() => handleOpenLocationPicker()}
+              />
 
-                  <input
-                    type="number"
-                    min="0.1"
-                    max="10"
-                    step="0.1"
-                    className="input input-bordered rounded-xl"
-                    value={sampleHz}
-                    onChange={(event) => setSampleHz(event.target.value)}
-                  />
-                </label>
-
-                <div className="rounded-2xl border border-base-300 bg-base-200/40 p-4">
-                  <div className="text-xs uppercase tracking-[0.14em] text-base-content/45">
-                    Camera
-                  </div>
-                  <div className="mt-1 text-sm font-semibold">Disabled</div>
-                </div>
-
-                <div className="rounded-2xl border border-base-300 bg-base-200/40 p-4">
-                  <div className="text-xs uppercase tracking-[0.14em] text-base-content/45">
-                    Location mode
-                  </div>
-                  <div className="mt-1 text-sm font-semibold">
-                    Fixed position
-                  </div>
-                </div>
-              </div>
-
-              {deviceStatus !== "connected" ? (
-                <div className="alert alert-info">
+              {!deviceSelected ? (
+                <div className="alert alert-info rounded-2xl">
                   <FiAlertTriangle />
-                  <span>
-                    Select an online static station before starting the
-                    session.
-                  </span>
+                  <span>Select a static station before starting the session.</span>
                 </div>
               ) : null}
 
               <button
                 type="button"
-                className="btn btn-primary w-full rounded-xl"
+                className="btn btn-primary mt-auto w-full rounded-xl"
                 disabled={!canStart}
                 onClick={handleStartClick}
               >
@@ -693,7 +796,9 @@ export default function MissionStaticPanel({
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <SelectedLocationCompact location={selectedLocation} onEdit={() => {}} />
+
+              <div className="mt-auto grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <button
                   type="button"
                   className="btn btn-outline rounded-xl"
@@ -717,7 +822,7 @@ export default function MissionStaticPanel({
                   {busy ? (
                     <span className="loading loading-spinner loading-xs" />
                   ) : (
-                    <FiSquare />
+                    <FiX />
                   )}
                   Abort session
                 </button>
@@ -726,13 +831,25 @@ export default function MissionStaticPanel({
           )}
         </div>
 
-        <div className="xl:col-span-5">
+        <div className="h-full">
           <MiniStaticMap
-            selectedLocation={selectedLocation}
-            onPickLocation={handleMapPick}
+            location={selectedLocation}
+            onOpenPicker={() => handleOpenLocationPicker()}
           />
         </div>
       </div>
+
+      <MissionStaticLocation
+        open={locationModalOpen}
+        initialLocation={modalInitialLocation}
+        gpsFix={liveGpsFix}
+        saving={savingLocation}
+        onClose={() => {
+          if (savingLocation) return;
+          setLocationModalOpen(false);
+        }}
+        onSave={handleSaveStaticLocation}
+      />
 
       <PanelToast toast={toast} onClose={clearToast} />
     </section>
