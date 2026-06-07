@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Outlet, useLocation } from "react-router-dom";
+import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import Sidebar from "./components/Sidebar";
 import Topbar from "./components/Topbar";
 import NewDeviceModal from "./components/NewDeviceModal";
@@ -30,8 +30,20 @@ const FALLBACK_PROFILES = [
   { type: "static", label: "Static Station" },
 ];
 
+function getDashboardRoute(profileType) {
+  switch (profileType) {
+    case "car":
+      return "/dashboard-car";
+    case "static":
+      return "/dashboard-static";
+    default:
+      return "/dashboard";
+  }
+}
+
 export default function AppShell() {
   const location = useLocation();
+  const navigate = useNavigate();
 
   const pageTitle = useMemo(() => {
     const found = ROUTE_META.find((r) => location.pathname.startsWith(r.path));
@@ -113,6 +125,22 @@ export default function AppShell() {
   }, [devicesRaw, selectedDeviceId]);
 
   const selectedProfileType = activeDevice?.active_profile_type || "drone";
+
+  useEffect(() => {
+    const dashboardRoutes = [
+      "/dashboard",
+      "/dashboard-car",
+      "/dashboard-static",
+    ];
+
+    if (!dashboardRoutes.includes(location.pathname)) return;
+
+    const targetRoute = getDashboardRoute(selectedProfileType);
+
+    if (location.pathname !== targetRoute) {
+      navigate(targetRoute, { replace: true });
+    }
+  }, [selectedProfileType, location.pathname, navigate]);
 
   async function handleDeviceChange(id) {
     setSelectedDeviceId(id);

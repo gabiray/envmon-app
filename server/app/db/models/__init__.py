@@ -3,3 +3,4 @@ from .mission import Mission
 from .telemetry import TelemetryPoint
 from .image import MissionImage
 from .start_point import StartPoint
+from .ai_report import AIReport

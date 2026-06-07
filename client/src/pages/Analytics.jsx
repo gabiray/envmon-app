@@ -14,6 +14,7 @@ import AnalyticsTrendsMulti from "../components/analytics/trends/AnalyticsTrends
 import AnalyticsInsightsSection from "../components/analytics/AnalyticsInsightsSection";
 import AnalyticsProfileSection from "../components/analytics/AnalyticsProfileSection";
 import AnalyticsSimpleLineChart from "../components/analytics/AnalyticsSimpleLineChart";
+import AIMissionAnalysisCard from "../components/analytics/AIMissionAnalysisCard";
 
 import {
   applyGpsFilter,
@@ -708,6 +709,13 @@ export default function Analytics() {
           gpsFilterOptions={GPS_FILTER_OPTIONS}
         />
       )}
+
+      {isSingleMission && activeMission?.mission_id ? (
+        <AIMissionAnalysisCard
+          missionId={activeMission.mission_id}
+          missionName={activeMission.mission_name || activeMission.mission_id}
+        />
+      ) : null}
 
       <AnalyticsInsightsSection
         mission={activeMission}
