@@ -39,6 +39,8 @@ import {
   fetchDeviceMissions,
 } from "../services/missionsApi";
 
+import ThemeSettingsPanel from "../components/settings/ThemeSettingsPanel";
+
 function getDeviceName(device) {
   return (
     device?.nickname ||
@@ -543,6 +545,7 @@ export default function Settings() {
 
   return (
     <div className="space-y-6">
+      <ThemeSettingsPanel />
       <ToastStack toasts={toasts} onDismiss={dismissToast} />
 
       <section className="rounded-[28px] border border-base-300 bg-base-100 shadow-sm">
