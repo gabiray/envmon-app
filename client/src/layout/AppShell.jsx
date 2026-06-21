@@ -16,6 +16,7 @@ const ROUTE_META = [
   { path: "/dashboard-static", title: "Dashboard" },
   { path: "/dashboard-car", title: "Dashboard" },
   { path: "/dashboard", title: "Dashboard" },
+  { path: "/dashboard-bicycle", title: "Dashboard" },
   { path: "/mission-control", title: "Mission Control" },
   { path: "/heatmap", title: "HeatMap" },
   { path: "/missions", title: "Missions" },
@@ -34,6 +35,8 @@ function getDashboardRoute(profileType) {
   switch (profileType) {
     case "car":
       return "/dashboard-car";
+    case "bicycle":
+      return "/dashboard-bicycle";
     case "static":
       return "/dashboard-static";
     default:
@@ -130,6 +133,7 @@ export default function AppShell() {
     const dashboardRoutes = [
       "/dashboard",
       "/dashboard-car",
+      "/dashboard-bicycle",
       "/dashboard-static",
     ];
 
