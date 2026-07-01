@@ -376,6 +376,8 @@ export default function DashboardBicycle() {
         mission_name:
           String(formPayload?.mission_name || "").trim() ||
           buildDefaultBicycleMissionName(selectedStartPoint),
+        profile_type: "bicycle",
+        profile_label: "Bicycle",
         duration: Number(formPayload?.duration ?? 600),
         sample_hz: Number(formPayload?.sample_hz ?? 1),
         photo_every: Number(formPayload?.photo_every ?? 0),

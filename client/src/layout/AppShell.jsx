@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import Sidebar from "./components/Sidebar";
 import Topbar from "./components/Topbar";
@@ -11,6 +17,7 @@ import {
   setDeviceProfile,
   configureDevice,
 } from "../services/devicesApi";
+import api from "../services/api";
 
 const ROUTE_META = [
   { path: "/dashboard-static", title: "Dashboard" },
@@ -44,6 +51,37 @@ function getDashboardRoute(profileType) {
   }
 }
 
+function isRuntimeMissionActive(state) {
+  return (
+    Boolean(state?.running) ||
+    ["ARMING", "RUNNING"].includes(String(state?.state || "").toUpperCase())
+  );
+}
+
+function getRuntimeProfileType(state) {
+  return (
+    state?.profile_type ||
+    state?.active_profile_type ||
+    state?.profile?.profile_type ||
+    state?.profile?.type ||
+    null
+  );
+}
+
+function getRuntimeProfileLabel(state, profiles = []) {
+  const profileType = getRuntimeProfileType(state);
+
+  return (
+    state?.profile_label ||
+    state?.active_profile_label ||
+    state?.profile?.profile_label ||
+    state?.profile?.label ||
+    profiles.find((p) => p.type === profileType)?.label ||
+    profileType ||
+    "Unknown profile"
+  );
+}
+
 export default function AppShell() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -60,6 +98,9 @@ export default function AppShell() {
   const [error, setError] = useState("");
 
   const [profiles, setProfiles] = useState(FALLBACK_PROFILES);
+
+  const [runtimeProfileLock, setRuntimeProfileLock] = useState(null);
+  const lastRuntimeProfileSyncRef = useRef(null);
 
   const [setupQueue, setSetupQueue] = useState([]);
   const [currentSetupDevice, setCurrentSetupDevice] = useState(null);
@@ -127,7 +168,14 @@ export default function AppShell() {
     return devicesRaw.find((d) => d.device_uuid === selectedDeviceId) || null;
   }, [devicesRaw, selectedDeviceId]);
 
-  const selectedProfileType = activeDevice?.active_profile_type || "drone";
+  const profileLockedByRunningMission =
+    Boolean(runtimeProfileLock) &&
+    runtimeProfileLock.deviceId === selectedDeviceId &&
+    runtimeProfileLock.running === true;
+
+  const selectedProfileType = profileLockedByRunningMission
+    ? runtimeProfileLock.profileType
+    : activeDevice?.active_profile_type || "drone";
 
   useEffect(() => {
     const dashboardRoutes = [
@@ -145,6 +193,82 @@ export default function AppShell() {
       navigate(targetRoute, { replace: true });
     }
   }, [selectedProfileType, location.pathname, navigate]);
+
+  useEffect(() => {
+    if (!selectedDeviceId || selectedDeviceId === "none") {
+      setRuntimeProfileLock(null);
+      lastRuntimeProfileSyncRef.current = null;
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    async function checkRuntimeProfileLock() {
+      try {
+        const { data } = await api.get("/device/status");
+
+        if (cancelled) return;
+
+        const runningNow = isRuntimeMissionActive(data);
+
+        if (!runningNow) {
+          setRuntimeProfileLock(null);
+          lastRuntimeProfileSyncRef.current = null;
+          return;
+        }
+
+        const runtimeProfileType =
+          getRuntimeProfileType(data) ||
+          activeDevice?.active_profile_type ||
+          "drone";
+
+        const runtimeProfileLabel = getRuntimeProfileLabel(data, profiles);
+
+        setRuntimeProfileLock({
+          deviceId: selectedDeviceId,
+          running: true,
+          profileType: runtimeProfileType,
+          profileLabel: runtimeProfileLabel,
+        });
+
+        const syncKey = `${selectedDeviceId}:${runtimeProfileType}`;
+
+        if (
+          runtimeProfileType &&
+          activeDevice?.active_profile_type !== runtimeProfileType &&
+          lastRuntimeProfileSyncRef.current !== syncKey
+        ) {
+          lastRuntimeProfileSyncRef.current = syncKey;
+
+          const profileLabel =
+            profiles.find((p) => p.type === runtimeProfileType)?.label ||
+            runtimeProfileLabel;
+
+          await setDeviceProfile(
+            selectedDeviceId,
+            runtimeProfileType,
+            profileLabel,
+          );
+          await refresh();
+        }
+      } catch {
+        if (cancelled) return;
+
+        // Dacă dispozitivul nu mai răspunde, nu blocăm profilul în interfață.
+        setRuntimeProfileLock(null);
+        lastRuntimeProfileSyncRef.current = null;
+      }
+    }
+
+    checkRuntimeProfileLock();
+
+    const interval = window.setInterval(checkRuntimeProfileLock, 3000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [selectedDeviceId, activeDevice?.active_profile_type, profiles, refresh]);
 
   async function handleDeviceChange(id) {
     setSelectedDeviceId(id);
@@ -173,6 +297,13 @@ export default function AppShell() {
 
   async function handleProfileChange(profileType) {
     if (!selectedDeviceId || selectedDeviceId === "none") return false;
+
+    if (profileLockedByRunningMission) {
+      setError(
+        `${runtimeProfileLock.profileLabel} mission is running. Stop or abort the mission before changing the profile.`,
+      );
+      return false;
+    }
 
     const profile = profiles.find((p) => p.type === profileType);
     if (!profile) return false;
@@ -280,7 +411,12 @@ export default function AppShell() {
             profiles={profiles}
             selectedProfileType={selectedProfileType}
             onProfileChange={handleProfileChange}
-            profileDisabled={!activeDevice}
+            profileDisabled={!activeDevice || profileLockedByRunningMission}
+            profileLockMessage={
+              profileLockedByRunningMission
+                ? `${runtimeProfileLock.profileLabel} mission running`
+                : ""
+            }
             newDevicesCount={setupQueue.length}
           />
 

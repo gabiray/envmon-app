@@ -50,7 +50,8 @@ function buildDefaultMissionName(startPoint) {
 export default function Dashboard() {
   const navigate = useNavigate();
 
-  const { selectedDeviceId, activeDevice, onDeviceConnected } = useOutletContext();
+  const { selectedDeviceId, activeDevice, onDeviceConnected } =
+    useOutletContext();
   const {
     uiStatus: deviceStatus,
     deviceState,
@@ -325,6 +326,8 @@ export default function Dashboard() {
         mission_name:
           String(formPayload?.mission_name || "").trim() ||
           buildDefaultMissionName(selectedStartPoint),
+        profile_type: "drone",
+        profile_label: "Drone",
         duration: Number(formPayload?.duration ?? 60),
         sample_hz: Number(formPayload?.sample_hz ?? 2),
         photo_every: Number(formPayload?.photo_every ?? 5),

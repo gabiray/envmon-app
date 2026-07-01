@@ -57,6 +57,7 @@ export default function HeatMap() {
   const [returnLocationKey, setReturnLocationKey] = useState(null);
   const [pendingLayerMissionId, setPendingLayerMissionId] = useState(null);
   const suppressDeepLinkRef = useRef(false);
+  const lastAutoLayerMissionRef = useRef(null);
 
   const [visibleLayers, setVisibleLayers] = useState(EMPTY_LAYERS);
   const [heatmapMetric, setHeatmapMetric] = useState("temp_c");
@@ -103,11 +104,28 @@ export default function HeatMap() {
   }, [selectedMissionId, missionMap]);
 
   useEffect(() => {
-    if (!pendingLayerMissionId) return;
-    if (!selectedMission) return;
-    if (selectedMission.missionId !== pendingLayerMissionId) return;
+    if (!selectedMission) {
+      lastAutoLayerMissionRef.current = null;
+      return;
+    }
+
+    const missionId = selectedMission.missionId;
+    if (!missionId) return;
+
+    if (pendingLayerMissionId && missionId !== pendingLayerMissionId) {
+      return;
+    }
+
+    const shouldApplyDefaultLayers =
+      pendingLayerMissionId === missionId ||
+      lastAutoLayerMissionRef.current !== missionId;
+
+    if (!shouldApplyDefaultLayers) {
+      return;
+    }
 
     setVisibleLayers(getDefaultMissionLayers(selectedMission));
+    lastAutoLayerMissionRef.current = missionId;
     setPendingLayerMissionId(null);
   }, [pendingLayerMissionId, selectedMission]);
 
@@ -118,9 +136,7 @@ export default function HeatMap() {
       track: Boolean(visibleLayers.track && hasMapLocation),
       heatmap: Boolean(visibleLayers.heatmap && hasMapLocation),
       captures: Boolean(
-        visibleLayers.captures &&
-          hasMapLocation &&
-          selectedMission?.hasImages,
+        visibleLayers.captures && hasMapLocation && selectedMission?.hasImages,
       ),
     };
   }, [visibleLayers, selectedMission]);

@@ -294,7 +294,8 @@ function DriveInsights({
 export default function DashboardCar() {
   const navigate = useNavigate();
 
-  const { selectedDeviceId, activeDevice, onDeviceConnected } = useOutletContext();
+  const { selectedDeviceId, activeDevice, onDeviceConnected } =
+    useOutletContext();
   const {
     uiStatus: deviceStatus,
     deviceState,
@@ -596,6 +597,8 @@ export default function DashboardCar() {
           String(formPayload?.mission_name || "").trim() ||
           buildDefaultCarMissionName(selectedStartPoint),
         duration: Number(formPayload?.duration ?? 180),
+        profile_type: "car",
+        profile_label: "Car",
         sample_hz: Number(formPayload?.sample_hz ?? 2),
         photo_every: 0,
         gps_mode: String(formPayload?.gps_mode || "required"),
@@ -655,7 +658,7 @@ export default function DashboardCar() {
             await refreshStatus();
             return { ok: true };
           }
-          
+
           const gpsLocationName = String(
             formPayload?.gps_location_name || "",
           ).trim();

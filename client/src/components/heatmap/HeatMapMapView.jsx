@@ -1255,32 +1255,79 @@ export default function HeatMapMapView({
     const map = mapRef.current;
     if (!map) return;
 
-    const apply = () => {
-      ensureOverlaySourcesAndLayers(map);
-      updateOverlayLayers(map, {
-        showTrack,
-        showHeatmap,
-        showCaptures,
-        trackGeoJson,
-        trackEndpointsGeoJson,
-        heatCellsGeoJson,
-        imagePointsGeoJson,
-      });
+    let cancelled = false;
+    let frameId = 0;
+    const timers = [];
 
-      try {
-        map.triggerRepaint?.();
-      } catch {}
+    const overlayState = {
+      showTrack,
+      showHeatmap,
+      showCaptures,
+      trackGeoJson,
+      trackEndpointsGeoJson,
+      heatCellsGeoJson,
+      imagePointsGeoJson,
     };
 
-    if (map.isStyleLoaded?.()) {
-      apply();
-    } else {
+    const apply = () => {
+      if (cancelled) return;
+      if (mapRef.current !== map) return;
+
       try {
-        map.once("styledata", apply);
+        map.resize?.();
       } catch {}
-    }
+
+      if (!map.isStyleLoaded?.()) {
+        return;
+      }
+
+      try {
+        ensureOverlaySourcesAndLayers(map);
+        updateOverlayLayers(map, overlayState);
+        map.triggerRepaint?.();
+      } catch (error) {
+        console.warn("[HeatMap] Failed to refresh overlay layers", error);
+      }
+    };
+
+    const scheduleApply = () => {
+      if (cancelled) return;
+      if (mapRef.current !== map) return;
+
+      frameId = window.requestAnimationFrame(() => {
+        apply();
+
+        timers.push(window.setTimeout(apply, 80));
+        timers.push(window.setTimeout(apply, 250));
+      });
+    };
+
+    scheduleApply();
+
+    try {
+      map.once("load", scheduleApply);
+      map.once("style.load", scheduleApply);
+      map.once("idle", scheduleApply);
+    } catch {}
+
+    return () => {
+      cancelled = true;
+
+      if (frameId) {
+        window.cancelAnimationFrame(frameId);
+      }
+
+      timers.forEach((timerId) => window.clearTimeout(timerId));
+
+      try {
+        map.off("load", scheduleApply);
+        map.off("style.load", scheduleApply);
+        map.off("idle", scheduleApply);
+      } catch {}
+    };
   }, [
     mapVersion,
+    selectedMission?.missionId,
     showTrack,
     showHeatmap,
     showCaptures,
@@ -2019,7 +2066,7 @@ export default function HeatMapMapView({
             <div className="mt-1 text-sm text-base-content/70">
               {hasActiveDevice
                 ? `Active device: ${deviceName}. Select a location badge to inspect the missions stored at that point.`
-                : `Select a device from the topbar and then choose a location on the ${
+                : `No active device. You can still browse saved missions by profile and select a location on the ${
                     viewMode === "globe" ? "globe" : "map"
                   }.`}
             </div>

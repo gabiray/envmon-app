@@ -50,6 +50,8 @@ function getDashboardRoute(profileType) {
   switch (profileType) {
     case "car":
       return "/dashboard-car";
+    case "bicycle":
+      return "/dashboard-bicycle";
     case "static":
       return "/dashboard-static";
     default:
@@ -70,8 +72,7 @@ function isDeviceOnline(device) {
   if (isPlaceholderDevice(device)) return false;
 
   return (
-    device.connectionState === "online" ||
-    device.connection_state === "online"
+    device.connectionState === "online" || device.connection_state === "online"
   );
 }
 
@@ -120,6 +121,7 @@ export default function Topbar({
   selectedProfileType = "",
   onProfileChange = () => {},
   profileDisabled = false,
+  profileLockMessage = "",
 
   newDevicesCount = 0,
 }) {
@@ -277,7 +279,7 @@ export default function Topbar({
                 className="btn btn-sm btn-outline rounded-xl w-12 min-w-12 px-0"
                 disabled={profileDisabled}
                 aria-label="Select profile"
-                title={selectedProfile.label}
+                title={profileLockMessage || selectedProfile.label}
               >
                 <SelectedProfileIcon className="text-base opacity-85" />
               </button>

@@ -1,6 +1,13 @@
 import React, { useMemo } from "react";
 import { NavLink } from "react-router-dom";
-import { FiGrid, FiMap, FiList, FiBarChart2, FiRadio, FiSettings } from "react-icons/fi";
+import {
+  FiGrid,
+  FiMap,
+  FiList,
+  FiBarChart2,
+  FiRadio,
+  FiSettings,
+} from "react-icons/fi";
 import droneLogo from "../../assets/drone.png";
 import styles from "../AppShell.module.css";
 
@@ -8,6 +15,8 @@ function getDashboardRoute(profileType) {
   switch (profileType) {
     case "car":
       return "/dashboard-car";
+    case "bicycle":
+      return "/dashboard-bicycle";
     case "static":
       return "/dashboard-static";
     default:
@@ -18,7 +27,11 @@ function getDashboardRoute(profileType) {
 export default function Sidebar({ selectedProfileType = "drone" }) {
   const navItems = useMemo(
     () => [
-      { to: getDashboardRoute(selectedProfileType), label: "Dashboard", Icon: FiGrid },
+      {
+        to: getDashboardRoute(selectedProfileType),
+        label: "Dashboard",
+        Icon: FiGrid,
+      },
       { to: "/mission-control", label: "Mission Control", Icon: FiRadio },
       { to: "/heatmap", label: "HeatMap", Icon: FiMap },
       { to: "/missions", label: "Missions", Icon: FiList },

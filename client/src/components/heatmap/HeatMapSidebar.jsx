@@ -224,7 +224,11 @@ export default function HeatMapSidebar({
   onOpenAnalytics = () => {},
 }) {
   const hasActiveDevice = Boolean(activeDevice && selectedDeviceId !== "none");
+  const canUseExplorerFilters = Array.isArray(profiles) && profiles.length > 0;
   const profileMeta = getProfileMeta(profileType);
+  const missionListTitle = hasActiveDevice
+    ? "Device missions"
+    : "Profile missions";
   const isDetailsMode = Boolean(selectedMission);
 
   const [detailsModalOpen, setDetailsModalOpen] = useState(false);
@@ -407,7 +411,7 @@ export default function HeatMapSidebar({
                   <ProfileDropdown
                     profiles={profiles}
                     value={profileType}
-                    disabled={!hasActiveDevice}
+                    disabled={!canUseExplorerFilters}
                     onChange={onProfileChange}
                   />
 
@@ -428,16 +432,16 @@ export default function HeatMapSidebar({
                       type="text"
                       value={searchValue}
                       onChange={(e) => onSearchChange(e.target.value)}
-                      disabled={!hasActiveDevice}
+                      disabled={loading}
                       placeholder="Search by mission, date or location..."
-                      className="w-full bg-transparent text-sm outline-none placeholder:text-base-content/35"
+                      className="w-full bg-transparent text-sm outline-none placeholder:text-base-content/35 disabled:cursor-not-allowed disabled:opacity-60"
                     />
                   </div>
                 </label>
               </div>
 
               <div className="mt-5 flex items-center justify-between">
-                <div className="text-sm font-semibold">Device missions</div>
+                <div className="text-sm font-semibold">{missionListTitle}</div>
                 <span className="badge badge-outline">{missionCount}</span>
               </div>
 

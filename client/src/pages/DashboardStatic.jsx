@@ -71,7 +71,11 @@ function getGpsFixFromDeviceState(deviceState) {
   return null;
 }
 
-function getStationLocation(selectedStaticLocation, liveTelemetry, deviceState) {
+function getStationLocation(
+  selectedStaticLocation,
+  liveTelemetry,
+  deviceState,
+) {
   if (
     selectedStaticLocation?.lat !== null &&
     selectedStaticLocation?.lat !== undefined &&
@@ -142,7 +146,8 @@ function normalizeDeviceMission(item, missionsMeta, importedIds) {
   return {
     ...merged,
     mission_id: missionId,
-    mission_name: merged.mission_name || merged.name || merged.title || missionId,
+    mission_name:
+      merged.mission_name || merged.name || merged.title || missionId,
     profile_type:
       merged.profile_type ||
       merged.profile?.profile_type ||
@@ -231,7 +236,8 @@ export default function DashboardStatic() {
   );
 
   const stationLocation = useMemo(
-    () => getStationLocation(selectedStaticLocation, liveTelemetry, deviceState),
+    () =>
+      getStationLocation(selectedStaticLocation, liveTelemetry, deviceState),
     [selectedStaticLocation, liveTelemetry, deviceState],
   );
 
@@ -403,6 +409,8 @@ export default function DashboardStatic() {
     try {
       await startMission({
         ...payload,
+        profile_type: "static",
+        profile_label: "Static Station",
         camera_mode: "off",
         photo_every: 0,
         location_mode: "fixed",
